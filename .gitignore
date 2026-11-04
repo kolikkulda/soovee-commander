@@ -1,0 +1,21 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+*.spec
+.DS_Store
+.release/
+
+# Local research, conversation notes and obsolete launch aliases
+local-notes/
+prototypes/
+Spustit.bat
+Spustit.command
+
+# Native client build products and machine-local SDK configuration
+mobile/**/build/
+mobile/**/.gradle/
+mobile/**/local.properties

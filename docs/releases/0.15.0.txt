@@ -1,0 +1,4 @@
+Soovee Commander: sjednocený název aplikace, Python modulu a spouštěčů.
+Oddělovače hlaviček v motivech Soovee a volitelné svislé čáry sloupců.
+První Windows x64 instalátor a přenosný ZIP; opravy FTP/FTPS, přenosů a UTF-8.
+Uložené nastavení a kompatibilita se staršími aktualizacemi zůstávají zachované.

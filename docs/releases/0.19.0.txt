@@ -1,0 +1,25 @@
+Soovee Commander 0.19.0 — interní testovací verze
+
+Panely a soubory:
+- Panely se obnovují samy: nové, smazané i přejmenované soubory z jiných aplikací se objeví hned; po návratu do aplikace se složky znovu načtou. Tlačítko Obnovit v liště, volby v Zobrazit.
+- Nové sloupce Přidáno a Naposledy otevřeno (na Macu stejné údaje jako Finder), vysvětlení dat v popiscích záhlaví, Řadit podle, Složky vždy nahoře.
+- Nový soubor (Shift+F4, nabídka Nový): text, Markdown, HTML, JSON, CSV, skript, Word, Excel, OpenDocument a vlastní šablony.
+
+Náhledy:
+- F3 má záložku Náhled: PDF, obrázky, SVG, Markdown, HTML bez skriptů, CSV/TSV, JSON a text dokumentů Word, Excel, PowerPoint a OpenDocument.
+- Rychlý náhled v druhém panelu: Control+Q na Macu, Ctrl+Q ve Windows.
+
+Ovládání a vzhled:
+- Nové hlavní menu s popisem každého příkazu, jedno okno Nastavení s hledáním a přehled zkratek (F1).
+- Jednotný vzhled dialogů: odkud a kam, seznam položek, tlačítko podle akce; trvalé mazání červeně a Enter ho nepotvrdí. Dotazy, které byly anglicky, jsou česky.
+- Nové okno Soovee Přenosy: stav a vypínač nahoře, sekce vlevo, aktivita dole.
+
+Opravy:
+- Sledování složek ve Windows nezamyká složky a nebrání jejich přejmenování.
+- Kopírování v mobilním jádru funguje i s cestami ve Windows.
+
+Mobilní klienti 0.19.0:
+- iPhone: přidání složek ze Souborů, srozumitelný stav párování a sdílení, ikony v liště složky, české texty, potvrzení po kopírování.
+- iPhone a Android: kopie do složky se stejným názvem dostane volný název, například „soubor (2).txt“; nic se nepřepíše.
+
+Veřejná binární distribuce nadále čeká na audit uvedený v THIRD_PARTY_NOTICES.md.

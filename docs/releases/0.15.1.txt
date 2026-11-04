@@ -1,0 +1,4 @@
+Název disku, volné, obsazené a celkové místo v hlavičce každého panelu.
+Tenký ukazatel zaplnění s barevným upozorněním při nedostatku místa.
+Informace o kapacitě také ve výběru disků; čtení na pozadí a automatické obnovování.
+Podpora češtiny a angličtiny, zachování údajů při přepínání motivů a záložek.

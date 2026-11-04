@@ -1,0 +1,1 @@
+`rar5-crc.rar` je veřejný testovací vzorek z projektu [rarfile](https://github.com/markokr/rarfile/blob/master/test/files/rar5-crc.rar), převzatý 30. 10. 2026. Licence je přiložena v `rarfile-LICENSE`. Používá se pouze pro regresní ověření čtení RAR5 přes libarchive, není součástí distribuované aplikace.

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soovee-commander"
+version = "0.20.0"
+description = "A cross-platform, dual-pane desktop file manager"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = ["PySide6-Essentials>=6.8,<7", "PySide6-Pdf>=6.12,<7", "paramiko>=3.5,<5", "cryptography>=43", "libarchive-c>=5,<6", "spake2>=0.9,<1", "qrcode>=8.2,<9", "Pillow>=11,<13", "zxing-cpp>=2.3,<4", "zeroconf>=0.153,<0.154"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-timeout>=2.4", "pyftpdlib>=2", "pyOpenSSL>=25.3", "pyinstaller>=6.12"]
+
+[project.scripts]
+# Deprecated compatibility command; new integrations use soovee-commander.
+stereo-commander = "soovee_commander.app:main"
+soovee-commander = "soovee_commander.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.setuptools.package-data]
+soovee_commander = ["locales/*.json", "assets/*.png", "assets/*.svg", "licenses/*.json", "licenses/*.txt"]
