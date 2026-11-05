@@ -1,27 +1,36 @@
-# Podporované funkce
+# Features
 
-| Oblast | Současný rozsah |
+## Desktop
+
+| Area | Scope |
 | --- | --- |
-| Místní soubory | Kopie, přesun, přejmenování, složky, koš, vlastnosti, velikosti výběru a složek. |
-| Panely | Záložky mezi panely, historie s obnovením výběru, cesty, vlastní sloupce a zkratky. |
-| Obnovování | Místní složka v panelu se obnoví sama, když jiná aplikace přidá, smaže nebo přejmenuje položku; kurzor, výběr i posun zůstanou. Po návratu do aplikace se složky znovu načtou (změny obsahu souborů, síťové disky). Volitelně pravidelná obnova i serverů a zařízení. Vypíná se v nabídce Zobrazit. |
-| Data a řazení | Sloupce Změněno, Vytvořeno, Přidáno a Naposledy otevřeno s vysvětlením v popisku záhlaví. Na macOS odpovídají Přidáno a Naposledy otevřeno údajům Finderu a načítají se jen, když je sloupec zobrazený nebo se podle něj řadí. Volba Složky vždy nahoře. |
-| Nové soubory | Shift+F4 a nabídka Nový: text, Markdown, prázdný soubor, HTML, JSON, CSV, skript, dokument Word, sešit Excel, OpenDocument text a tabulka, vlastní šablony ze složky šablon. Existující soubor se nikdy nepřepíše; textové soubory se mohou rovnou otevřít v F4. |
-| Zobrazení | Výchozí detaily, volitelný kompaktní seznam, ikony a místní obrázkové miniatury; velikost ikon/řádků a režim se ukládají pro každý panel. Vzdálené soubory ani archivy se kvůli miniaturám automaticky nestahují. |
-| Hromadné přejmenování | Živý náhled, kopírování původního názvu, výběr znaků, masky jména a přípony, počítadlo, nahrazení/regex a uložené předvolby. Rozsahy znaků jsou od jedné a zahrnují koncovou pozici, např. `[N2-5]`. |
-| Disky | Název, dostupné/obsazené/celkové místo a ukazatel zaplnění v každém panelu; čtení na pozadí. Přímá FTP/FTPS/SFTP a Soovee připojení zatím kapacitu neposkytují. |
-| Posouvání | Volitelné připnutí názvu, svislá gesta, ruční vodorovná lišta a šipky. |
-| Archivy | Procházení a rozbalení ZIP, 7z, RAR a TAR podle možností backendu libarchive. |
-| Komprese | Nový ZIP, 7z, TAR, TAR.GZ, TAR.BZ2 a TAR.XZ. Existující ZIP lze upravovat; ostatní existující archivy jsou pro zápis jen ke čtení. RAR se nevytváří. |
-| Připojení | Pasivní FTP, explicitní FTPS s ověřením certifikátu a SFTP s ověřeným hostitelským klíčem. Implicitní FTPS a aktivní FTP zatím nejsou implementované. |
-| F3 | Text, Hex/ASCII a obrázky; text je omezen na prvních 16 MiB s upozorněním na částečný obsah. Záložka Náhled ukáže formátovaný Markdown, zjednodušené HTML bez skriptů a externího obsahu, tabulky CSV/TSV, strukturu JSON, kresby SVG, PDF a text dokumentů Word, Excel, PowerPoint a OpenDocument (bez formátování). Dokumenty a obrázky se čtou celé do 64 MiB. PDF zobrazuje přibalený Qt PDF (PDFium) stejně na macOS i Windows; HEIC/HEIF jen na macOS. |
-| Rychlý náhled | Ctrl+Q (na macOS Control+Q): druhý panel ukazuje soubor pod kurzorem a mění se s pohybem kurzoru. Vzdálené soubory a archivy jen do 8 MiB. Jednotlivé typy náhledů se zapínají v Zobrazit › Vestavěné náhledy. |
-| F4 | Integrovaný editor do 16 MiB, čísla řádků, základní syntaxe, hledání/nahrazování, Undo/Redo, kódování a konce řádků. |
-| Přenosy | QR/kód, potvrzení párování, výslovné zpřístupnění složek, oba směry, kontrola SHA-256. |
-| Zařízení jako disk | Virtuální disk uvnitř panelu programu, nikoli systémový disk Finderu/Průzkumníka. |
-| Nabídky a nastavení | Hlavní nabídka Soubor, Úpravy, Zobrazit, Přejít, Nástroje, Síť a zařízení, Nastavení, Nápověda; každý příkaz má popis ve stavovém řádku a v tooltipu tlačítek. Jedno okno Nastavení (Cmd/Ctrl+,) s kategoriemi a hledáním: Základní, Panely a obnovování, Náhledy, Klávesy a tlačítka, Externí příkazy, Přidružení souborů, Přenosy a aktualizace. Přehled všech klávesových zkratek s popisy (F1). |
-| Jazyky | Čeština a angličtina; další jazyky lze přidat samostatným katalogem. |
+| Files | Copy, move, rename, new folder, trash, permanent delete, properties, folder sizes. |
+| Panels | Two panels with tabs and history, configurable columns, keyboard shortcuts and toolbars. |
+| Refresh | Folders refresh when their contents change; selection and position are kept. |
+| Dates and sorting | Modified, created, date added and last opened (macOS, as in Finder); folders-first option. |
+| New files | Text, Markdown, HTML, JSON, CSV, scripts, Word, Excel, OpenDocument and custom templates. Existing files are never overwritten. |
+| Views | Details, compact list, icons and local image thumbnails. |
+| Multi-rename | Live preview, name and extension masks, character ranges, counters, search and replace with regular expressions, presets. |
+| Disks | Free, used and total space in each panel. |
+| Archives | Browse and extract ZIP, 7z, RAR and TAR; create ZIP, 7z and TAR (gz, bz2, xz); edit existing ZIP files. |
+| Connections | FTP (passive), explicit FTPS with certificate checks, SFTP with host key verification. |
+| Viewer (F3) | Text, hex and images, with a Preview tab for Markdown, HTML, CSV, JSON, SVG, PDF and office documents. |
+| Quick view | The other panel previews the file under the cursor. |
+| Editor (F4) | Line numbers, basic syntax highlighting, search and replace, encodings and line endings. |
+| Devices | Pair with a code or QR code, share chosen folders, browse paired devices as a disk in a panel. Transfers are verified with SHA-256. |
+| Languages | English and Czech. |
 
-Heslované archivy závisí na podpoře formátu v použitém backendu. Soubory ze vzdáleného serveru a archivů nelze přímo přetahovat do libovolné cizí aplikace; nativní přetažení je určené pro místní soubory.
+## iPhone, iPad, Android and Android TV
 
-Automatizované testy používají skutečné místní FTP/FTPS/SFTP servery, archivy a dvě instance přenosového protokolu. Nejde o ověření všech komerčních serverů, zařízení nebo všech verzí operačních systémů.
+- File manager for the app's own folder, folders chosen in the system file picker (iOS) or device storage after permission (Android).
+- Fast lists with thumbnails, search in subfolders, multi-selection, copy, move, duplicate, rename, delete, ZIP/TAR archives, favorites and recent folders.
+- Previews and a plain-text editor.
+- Copy progress with speed and time remaining.
+- Two panels on iPad and on iPhone in landscape.
+- Pairing with computers, phones and TVs on the same network.
+
+## Limits
+
+- Remote files and archive contents cannot be dragged directly into other apps.
+- Implicit FTPS and active FTP are not implemented.
+- Encrypted archives depend on the support of the archive format.

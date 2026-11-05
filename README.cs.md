@@ -16,7 +16,7 @@ Testovací verze jsou v [GitHub Releases](https://github.com/kolikkulda/soovee-c
 - **iPhone / iPad:** zatím jen vývojové sestavení, ne App Store.
 - Python ani další knihovny se k hotovým balíčkům ručně neinstalují.
 
-[Instalace, aktualizace a přechod ze staršího názvu](docs/installation.md).
+Podrobnější dokumentace je v angličtině: [instalace a aktualizace](docs/installation.md), [vývoj](docs/development.md).
 
 ## Funkce
 
@@ -29,10 +29,10 @@ Testovací verze jsou v [GitHub Releases](https://github.com/kolikkulda/soovee-c
 - Hledání v názvech i obsahu, porovnání složek a hromadné přejmenování.
 - Rozšířené masky hromadného přejmenování, výběr znaků a počítadla; volitelné seznamy, ikony a místní miniatury.
 - Čeština a angličtina, světlé a tmavé motivy, vlastní klávesové zkratky.
-- Soovee Přenosy: párování QR/kódem a zpřístupnění vybraných složek. První [nativní testovací klient pro Android a Android TV](docs/mobile.md) sdílí aplikační složku Shared.
+- Soovee Přenosy: párování QR/kódem a zpřístupnění vybraných složek. Klienti pro Android, Android TV, iPhone a iPad.
 - Diagnostický log a „O programu“ s verzí a licencemi.
 
-[Přesný rozsah a omezení](docs/features.md) · [Stav jednotlivých platforem](docs/platforms.md).
+[Funkce](docs/features.md) · [Platformy](docs/platforms.md) (anglicky).
 
 ## Spuštění ze zdrojů
 
@@ -47,7 +47,7 @@ python -m soovee_commander
 
 Ve Windows aktivujte `.venv\Scripts\activate`. Pomocné spouštěče jsou `Run.command` a `Run.bat`.
 
-[Vývoj, testy a sestavení balíčků](docs/development.md).
+
 
 ## Licence
 

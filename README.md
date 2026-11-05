@@ -32,7 +32,7 @@ Download the files from [Releases](https://github.com/kolikkulda/soovee-commande
 - Soovee Transfers: pair devices with a code or QR code and share chosen folders between computers, phones and TVs on the local network, encrypted with TLS 1.3.
 - iPhone and iPad: a file manager for the app's folder and folders chosen in Files, with previews, search, archives and two panels on iPad.
 
-[Scope and limits](docs/features.md) · [Platform status](docs/platforms.md)
+[Features](docs/features.md) · [Platforms](docs/platforms.md) · [Installation and updates](docs/installation.md) · [Development](docs/development.md) · [Changelog](CHANGELOG.md)
 
 ## Run from source
 

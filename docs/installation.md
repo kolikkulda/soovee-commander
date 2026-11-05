@@ -1,30 +1,28 @@
-# Instalace a aktualizace
+# Installation and updates
 
 ## macOS
 
-Otevřete DMG, přetáhněte `SooveeCommander.app` do Applications a spusťte ji z této složky. Disk s instalátorem lze potom vysunout.
+Open the DMG and drag `SooveeCommander.app` to Applications. The app is not notarized yet: the first time, right-click it in Applications and choose Open.
 
-U starší instalace pojmenované `StereoCommander.app` lze použít nový DMG. Po ověření, že nová aplikace funguje, odstraňte starou aplikaci z Applications. Uložené nastavení, připojení a spárovaná zařízení nejsou součástí `.app` a při tomto přechodu se zachovají. Nemažte uživatelské datové složky aplikace.
-
-Balíčky pro Mac mají zatím ad-hoc podpis, nejsou notarizované společností Apple.
+Settings, saved connections and paired devices are stored outside the app and are kept when the app is replaced or updated.
 
 ## Windows
 
-Instalátor je určený pro x64 Windows a instaluje program pro aktuálního uživatele. Vytvoří zástupce a odinstalátor. Přenosný ZIP se rozbalí celý, včetně složky `_internal`; spouští se `SooveeCommander.exe`. Tato varianta používá běžné uživatelské nastavení a logy, ne vlastní profil uložený u ZIP.
+The installer is for x64 Windows and installs for the current user, with a Start menu shortcut and an uninstaller. The portable ZIP runs without installation: unpack the whole archive, including the `_internal` folder, and start `SooveeCommander.exe`. Both use the same user settings.
 
-Instalátor zatím nemá Authenticode certifikát vydavatele.
+The installer is not signed with a publisher certificate yet, so Windows SmartScreen may ask for confirmation.
 
-## Aktualizace
+## Android and Android TV
 
-V nabídce aktualizací vyberte konkrétní soubor `.stereoupdate`, nebo složku, která jej přímo obsahuje. Balíček nerozbalujte. Program ověří podpis, správnou platformu a verzi a teprve potom nabídne výměnu aplikace.
+Install `SooveeCommander-…-android-universal.apk` (Android 7 or newer). Android asks to allow installing apps from the browser or file manager you use. Later versions install over the existing one and keep its files and pairings.
 
-Hledání ukazuje vybranou cestu a kontrolovaný soubor. Složka bez aktualizace skončí chybou. Cloudový zástupce je na macOS odmítnut s pokynem nejprve soubor stáhnout ve Finderu.
+## Updates
 
-Pro kompatibilitu se starými aktualizacemi zůstává formát `.stereoupdate` a několik interních identifikátorů původního programu. Veřejný název aplikace i Python modul jsou Soovee Commander.
+Download the `.stereoupdate` file for your system from the release and choose **Help › Install update** (keep the file packed). The app checks the signature, platform and version before it replaces itself, and keeps a backup of the previous version.
 
-## Logy
+## Diagnostic log
 
-**Nápověda → Diagnostický log…** umožňuje zobrazit a místně exportovat záznamy. Export může obsahovat cesty a adresy serverů; nic se samo neodesílá.
+**Help › Diagnostic log** shows recent events and errors and can export them. The log stays on your computer; nothing is sent automatically. Exports may contain file paths and server addresses.
 
 - macOS: `~/Library/Logs/SooveeCommander/application.jsonl`
-- Windows: uživatelská složka LocalAppData, podadresář `SooveeCommander/logs`
+- Windows: `%LOCALAPPDATA%\SooveeCommander\logs`
