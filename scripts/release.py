@@ -64,14 +64,32 @@ def stamp_app(path):
         plistlib.dump(info, stream)
 
 
+def changelog_notes(version):
+    """The CHANGELOG.md section of a version, shown in the update dialog."""
+    path = ROOT / "CHANGELOG.md"
+    if not path.is_file():
+        return ""
+    lines, inside = [], False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            if inside:
+                break
+            inside = line.startswith(f"## [{version}]")
+            if inside:
+                lines.append(f"Soovee Commander {version}")
+            continue
+        if inside:
+            lines.append(line[4:] if line.startswith("### ") else line)
+    return "\n".join(lines).strip()
+
+
 def package(artifact, target, output):
     key = release_key()
     artifact, output = Path(artifact), Path(output)
     with artifact.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     name = "setup.exe" if target.startswith("windows-") else "application.zip"
-    notes_file = ROOT / "docs" / "releases" / f"{__version__}.txt"
-    notes = notes_file.read_text(encoding="utf-8").strip() if notes_file.is_file() else "New Soovee Commander release."
+    notes = changelog_notes(__version__) or "New Soovee Commander release."
     if len(notes) > 4000:
         raise RuntimeError("Release notes may have at most 4000 characters.")
     manifest = {"schema": 1, "app_id": APP_ID, "version": __version__, "target": target,
