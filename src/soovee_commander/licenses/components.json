@@ -95,7 +95,7 @@
     "name": "PDFium (inside Qt PDF)",
     "version": "Bundled with PySide6-Pdf",
     "license": "BSD-3-Clause; bundled third-party notices see Qt PDF attributions",
-    "url": "https://doc.qt.io/qt-6/qtpdf-attribution-pdfium.html",
+    "url": "https://doc.qt.io/qt-6/licenses-used-in-qt.html",
     "files": [
       "PDFium-LICENSE.txt"
     ]

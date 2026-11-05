@@ -14,18 +14,18 @@ Keep LICENSE, this notice, upstream notices, build scripts and test-fixture lice
 
 ## LGPL components in the binary releases
 
-The macOS, Windows and Android packages of release 0.20.0 contain these components under the GNU Lesser General Public License. Versions were read from the component inventory inside the built packages (About › Components and licenses shows the same list).
+The macOS, Windows and Android packages of releases 0.20.0 and 0.21.0 contain these components under the GNU Lesser General Public License. Versions were read from the component inventory inside the built packages (About › Components and licenses shows the same list).
 
 | Component | Version | License | Corresponding source |
 | --- | --- | --- | --- |
 | Qt (libraries used by PySide6, including Qt PDF) | 6.12.0 | LGPL-3.0-only | [qt-everywhere-src-6.12.0.tar.xz](https://download.qt.io/official_releases/qt/6.12/6.12.0/single/qt-everywhere-src-6.12.0.tar.xz) |
-| PySide6 (Essentials, Pdf) and Shiboken6 | 6.12.0 | LGPL-3.0-only | `pyside-setup-everywhere-src-6.12.0.tar.xz`, attached to the release; upstream [download.qt.io](https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.12.0-src/) |
-| Paramiko | 4.0.0 | LGPL-2.1 | `paramiko-4.0.0.tar.gz`, attached to the release; upstream [PyPI](https://pypi.org/project/paramiko/4.0.0/) |
-| python-zeroconf | 0.153.0 | LGPL-2.1-or-later | `zeroconf-0.153.0.tar.gz`, attached to the release; upstream [PyPI](https://pypi.org/project/zeroconf/0.153.0/) |
+| PySide6 (Essentials, Pdf) and Shiboken6 | 6.12.0 | LGPL-3.0-only | [pyside-setup-everywhere-src-6.12.0.tar.xz](https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.12.0-src/pyside-setup-everywhere-src-6.12.0.tar.xz) |
+| Paramiko | 4.0.0 | LGPL-2.1 | [paramiko 4.0.0 source](https://pypi.org/project/paramiko/4.0.0/#files) |
+| python-zeroconf | 0.153.0 | LGPL-2.1-or-later | [zeroconf 0.153.0 source](https://pypi.org/project/zeroconf/0.153.0/#files) |
 
 The libraries are used unmodified. Soovee Commander's own source code, build scripts and build instructions are in this repository ([docs/development.md](docs/development.md)).
 
-**Source offer.** For at least three years after a release, the corresponding source of the LGPL components listed for that release is available on request: open an issue in this repository. The Qt source archive is large and is linked from the official Qt download server above instead of being attached.
+**Source offer.** For at least three years after a release, the corresponding source of the LGPL components listed for that release is available on request: open an issue in this repository. The sources are linked from the official Qt and PyPI servers above.
 
 ### Replacing or modifying the LGPL libraries
 

@@ -14,8 +14,5 @@ Pairing
 - When the other device has forgotten the pairing, the app offers to remove it and pair again instead of showing a TLS error.
 - Pair is enabled only after all eight digits are entered.
 
-macOS
-- An update package stored only in iCloud Drive is downloaded automatically before it is checked.
-
 Fixes
 - Refused connections on Windows are reported as a forgotten pairing.
