@@ -617,3 +617,15 @@ def test_transfer_events_have_recursive_total_paths_and_monotonic_file_bytes(fol
         elif event['event'] == 'advance':
             assert event['bytes'] >= current
             current = event['bytes']
+
+
+def test_copy_metadata_falls_back_when_attributes_are_refused(tmp_path, monkeypatch):
+    """Android SELinux refuses extended attributes with EACCES; copies must still succeed."""
+    import os, shutil
+    from soovee_commander import providers
+    source = tmp_path / 'a.txt'; source.write_text('a'); os.utime(source, (1_000_000, 1_000_000))
+    target = tmp_path / 'b.txt'; target.write_text('a')
+    def refuse(*args, **kwargs): raise PermissionError(13, 'Permission denied')
+    monkeypatch.setattr(shutil, 'copystat', refuse)
+    providers.copy_metadata(str(source), str(target))
+    assert int(target.stat().st_mtime) == 1_000_000

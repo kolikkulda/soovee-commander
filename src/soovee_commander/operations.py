@@ -11,7 +11,7 @@ import zipfile
 from datetime import datetime
 from threading import Event
 
-from .providers import ArchiveProvider, Entry, LocalProvider, Provider, RemoteProvider
+from .providers import ArchiveProvider, Entry, LocalProvider, Provider, RemoteProvider, copy_metadata
 from .nativefs import rename_no_replace
 from .transfer_status import emit as transfer_event
 
@@ -113,7 +113,7 @@ def copy_entries(source: Provider, source_path: str, destination: Provider,
             for child in source_directories[src_path]:
                 copy_one(source.join(src_path, child.name), destination.join(dst_path, child.name), child)
             if isinstance(source, LocalProvider) and isinstance(destination, LocalProvider):
-                shutil.copystat(src_path, dst_path)
+                copy_metadata(src_path, dst_path)
         else:
             transferred_file = 0
             transfer_event(report, 'file', source=src_path, destination=dst_path, size=entry.size)

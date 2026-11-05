@@ -1,0 +1,6 @@
+<resources>
+    <!-- Dialogs and system widgets follow the device's light or dark mode. -->
+    <style name="SooveeTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:colorAccent">#0B8F9C</item>
+    </style>
+</resources>

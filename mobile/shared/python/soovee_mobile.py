@@ -508,7 +508,7 @@ def duplicate_item(path):
                 while block := reader.read(1024 * 1024):
                     if operation_cancel.is_set(): raise Cancelled('Copy canceled.')
                     writer.write(block); report('@', len(block))
-            shutil.copystat(source, destination)
+            info = source.stat(); os.utime(destination, ns=(info.st_atime_ns, info.st_mtime_ns))   # not copystat: Android forbids copying SELinux attributes
         try:
             if original.is_file(): copy_file(original, target)
             else:

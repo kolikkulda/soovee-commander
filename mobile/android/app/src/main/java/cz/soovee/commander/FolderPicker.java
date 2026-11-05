@@ -19,7 +19,7 @@ final class FolderPicker {
         TextView location=new TextView(activity);location.setTextIsSelectable(true);body.addView(location);
         Button parent=new Button(activity);parent.setText("↑ ..");body.addView(parent);
         ListView list=new ListView(activity);body.addView(list,new LinearLayout.LayoutParams(-1,400));
-        AlertDialog dialog=new AlertDialog.Builder(activity).setTitle(title).setView(body)
+        AlertDialog dialog=(activity instanceof MainActivity?((MainActivity)activity).dialog():new AlertDialog.Builder(activity)).setTitle(title).setView(body)
             .setNegativeButton(android.R.string.cancel,null).setPositiveButton(text.apply("Use this folder"),(d,w)->chosen.accept(path)).create();
         Runnable[] reload=new Runnable[1];reload[0]=()->{
             location.setText(path+"\n"+text.apply("Loading folders…"));parent.setEnabled(!path.equals("/"));list.setEnabled(false);int request=++generation;String requested=path;

@@ -357,7 +357,8 @@ static NSDateFormatter *ShortDate(void) {
 - (NSString *)itemCount:(NSUInteger)count {
     // Czech needs three forms: 1 položka, 2–4 položky, 5+ položek.
     NSString *form=count==1?@"item":(count>=2&&count<=4)?@"items (2-4)":@"items";
-    return [NSString stringWithFormat:@"%lu %@",(unsigned long)count,T(form)];
+    NSString *word=T(form);if([word isEqual:@"items (2-4)"])word=@"items";
+    return [NSString stringWithFormat:@"%lu %@",(unsigned long)count,word];
 }
 - (void)openFolder:(NSString *)path {
     self.path=path;self.filter=@"";self.searchQuery=nil;[self.selection removeAllObjects];[self showFiles];

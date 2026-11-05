@@ -1,0 +1,5 @@
+<resources>
+    <style name="SooveeTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#1ADCE6</item>
+    </style>
+</resources>

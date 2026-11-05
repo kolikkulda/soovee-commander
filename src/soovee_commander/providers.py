@@ -113,6 +113,21 @@ class Entry:
 
 from functools import lru_cache
 
+def copy_metadata(source, destination):
+    """Times and permissions like shutil.copystat. Extended attributes are copied
+    when allowed; Android's SELinux refuses them with EACCES, which copystat does
+    not ignore, so fall back to mode and times only."""
+    try:
+        shutil.copystat(source, destination)
+    except PermissionError:
+        info = os.stat(source)
+        try:
+            os.chmod(destination, stat.S_IMODE(info.st_mode))
+        except OSError:
+            pass
+        os.utime(destination, ns=(info.st_atime_ns, info.st_mtime_ns))
+
+
 @lru_cache(maxsize=256)
 def owner_name(uid, group=False):
     if os.name == "nt":
@@ -216,7 +231,7 @@ class LocalProvider(Provider):
             with os.fdopen(fd, "wb") as output:
                 producer(output)
             if metadata_path:
-                shutil.copystat(metadata_path, temporary)
+                copy_metadata(metadata_path, temporary)
             elif modified:
                 os.utime(temporary, (modified, modified))
             progress(0)  # Cancellation is checked once more before publishing.
@@ -239,7 +254,7 @@ class LocalProvider(Provider):
                     try:
                         with output:
                             pump(staged, output, lambda count: progress(0))
-                        shutil.copystat(temporary, path)
+                        copy_metadata(temporary, path)
                     except BaseException:
                         os.unlink(path)
                         raise
