@@ -31,4 +31,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SooveeCommander-android-unsigned
+          retention-days: 3   # builds are downloaded right away; keeps Actions storage small
           path: mobile/android/app/build/outputs/apk/release/*-unsigned.apk

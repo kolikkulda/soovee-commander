@@ -119,4 +119,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SooveeCommander-${{ matrix.os }}
+          retention-days: 3   # builds are downloaded right away; keeps Actions storage small
           path: dist/
