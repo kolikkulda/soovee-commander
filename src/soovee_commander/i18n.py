@@ -66,6 +66,8 @@ def ui_retranslator():
             return text
         # Shortcuts are presentation suffixes, never part of a source message.
         body, separator, shortcut = text.partition('\t')
+        if not separator and text.endswith(')') and '  (' in text:   # macOS menu label "Title  (key)"
+            body, separator, shortcut = text.rpartition('  (')
         if body in direct:
             return tr(direct[body]) + separator + shortcut
         for pattern, source in patterns:

@@ -231,11 +231,24 @@ class ConnectDialog(QDialog):
     def protocol_changed(self, protocol):
         self.port.setText("22" if protocol == "SFTP" else "21")
         self.keyfile.setEnabled(protocol == "SFTP")
+        # Plain FTP is offered last and its warning is shown in red, not as a muted hint.
+        self.note.setStyleSheet("color: #c93a3a; font-weight: 600;" if protocol == "FTP" else "")
         self.note.setText({
             "SFTP": tr('The host key must be in ~/.ssh/known_hosts. Verify it with OpenSSH before connecting. Passwords stay in memory.'),
             "FTPS": tr('Explicit TLS, certificate verification and encrypted data channel. Passwords are not saved.'),
-            "FTP": tr('FTP sends passwords and data without encryption. Use FTPS or SFTP for sensitive data.'),
+            "FTP": tr('Not secure: FTP sends passwords and data without encryption. Use SFTP or FTPS whenever the server supports it.'),
         }[protocol])
+
+    def accept(self):
+        text = self.host.text().strip()
+        protocol = text.split("://", 1)[0].upper() if "://" in text else self.protocol.currentText()
+        if protocol == "FTP":
+            from .dialog_kit import confirm
+            if not confirm(self, tr('Unencrypted connection'), tr('Connect without encryption?'),
+                           tr('With FTP, anyone on the network path can read the password and the files. Use SFTP or FTPS whenever the server supports it.'),
+                           action=tr('Connect anyway'), destructive=True):
+                return
+        super().accept()
 
     def connection(self):
         from urllib.parse import urlsplit, unquote
@@ -921,35 +934,69 @@ class Commander(QMainWindow):
         entries = source.action_entries()
         if not entries:
             return
-        if not isinstance(target.provider, LocalProvider):
+        # Like Total Commander, the archive goes next to the packed items unless the user picks another place.
+        folder = source.path if isinstance(source.provider, LocalProvider) else (target.path if isinstance(target.provider, LocalProvider) else None)
+        if folder is None:
             return self.error(tr('Choose a local folder in the other panel for the new archive.'))
         from .packing import FORMATS, create_archive
+        base = (entries[0].name if entries[0].is_dir else os.path.splitext(entries[0].name)[0]) if len(entries) == 1 else (os.path.basename(source.path.rstrip(os.sep)) or "Archive")
         dialog = dialog_kit.StandardDialog(self, tr('Create archive…'), tr('Pack {v0} items').format(v0=len(entries)),
-                                           tr('Into: {v0}').format(v0=target.location()), icon="pack", action=tr('Create archive'))
-        layout = dialog.body
+                                           tr('From: {v0}').format(v0=source.location()), icon="pack", action=tr('Create archive'))
         dialog.add(dialog_kit.item_list(e.name for e in entries))
         form = QFormLayout()
-        name = QLineEdit(entries[0].name)
         format_combo = QComboBox()
         for label, key, extension in FORMATS:
             format_combo.addItem(label, key)
-        form.addRow(tr('New archive name:'), name)
+        path_edit = QLineEdit(os.path.join(folder, base + FORMATS[0][2]))
+        path_edit.setProperty('userContent', True)
+        row = QHBoxLayout()
+        row.addWidget(path_edit, 1)
+        browse = QPushButton(tr('Browse…'))
+        row.addWidget(browse)
+        other = QPushButton(tr('Other panel'))
+        other.setToolTip(tr('Put the archive into the folder shown in the other panel.'))
+        other.setEnabled(isinstance(target.provider, LocalProvider))
+        row.addWidget(other)
+        form.addRow(tr('Archive:'), row)
         form.addRow(tr('Format'), format_combo)
-        layout.addLayout(form)
+        dialog.body.addLayout(form)
         dialog.note(tr('The selected files and folders will be packed internally. RAR creation is not supported.'))
-        if dialog.exec() != QDialog.DialogCode.Accepted or not name.text():
+
+        def extension_of(key):
+            return next(extension for label, k, extension in FORMATS if k == key)
+
+        def strip_known(path):
+            for label, key, extension in sorted(FORMATS, key=lambda item: -len(item[2])):
+                if path.lower().endswith(extension):
+                    return path[:-len(extension)]
+            return path
+
+        def format_changed():
+            path_edit.setText(strip_known(path_edit.text()) + extension_of(format_combo.currentData()))
+
+        def choose():
+            chosen, _ = QFileDialog.getSaveFileName(dialog, tr('Create archive…'), path_edit.text())
+            if chosen:
+                path_edit.setText(strip_known(chosen) + extension_of(format_combo.currentData()))
+
+        format_combo.currentIndexChanged.connect(format_changed)
+        browse.clicked.connect(choose)
+        other.clicked.connect(lambda: path_edit.setText(os.path.join(target.path, os.path.basename(path_edit.text()))))
+        path_edit.setFocus()
+        path_edit.setSelection(len(os.path.dirname(path_edit.text())) + 1, len(os.path.basename(strip_known(path_edit.text()))))
+        if dialog.exec() != QDialog.DialogCode.Accepted or not path_edit.text().strip():
             return
         try:
             format = format_combo.currentData()
-            extension = next(extension for label, key, extension in FORMATS if key == format)
-            filename = name.text()
-            if not filename.lower().endswith(extension):
-                filename += extension
-            destination = target.provider.join(target.path, filename)
-            if target.provider.exists(destination):
+            destination = os.path.abspath(os.path.expanduser(path_edit.text().strip()))
+            if not destination.lower().endswith(extension_of(format)):
+                destination += extension_of(format)
+            if not os.path.isdir(os.path.dirname(destination)):
+                raise FileNotFoundError(tr('The folder for the archive does not exist.'))
+            if os.path.exists(destination):
                 raise FileExistsError(tr('The archive already exists. Choose another name.'))
             provider, path = source.provider, source.path
-            self.enqueue(tr('Create {v0}').format(v0=filename), lambda cancel, report:
+            self.enqueue(tr('Create {v0}').format(v0=os.path.basename(destination)), lambda cancel, report:
                          create_archive(provider, path, destination, entries, cancel, report, format))
         except (ValueError, OSError) as exc:
             self.error(str(exc))
@@ -1108,11 +1155,11 @@ class Commander(QMainWindow):
         self.run_task(lambda emit: function(cancel, emit), success,
                       lambda error: finish(tr('Incomplete: {v0}').format(v0=error), True), transfer=True, report=report)
 
-    def show_open_with(self, paths=None):
+    def show_open_with(self, paths=None, assign=False):
         paths = paths if isinstance(paths, list) else self.active.local_file_paths()
         if not paths:
             return self.error(tr('Choose a local file. Copy files from archives or servers to disk first.'))
-        dialog = OpenWithDialog(self, paths)
+        dialog = OpenWithDialog(self, paths, assign=assign)
         self.preview_windows.append(dialog)
         dialog.finished.connect(lambda _: self.preview_windows.remove(dialog) if dialog in self.preview_windows else None)
         dialog.show()
@@ -1281,9 +1328,40 @@ class Commander(QMainWindow):
         field(general_form, tr('Location'), panel.location())
         if len(entries) == 1:
             for label, value in [(tr('Name'), entry.name), (tr('Type'), display_cell(entry, 3)),
-                                 (tr('Modified'), display_cell(entry, 2)),
-                                 (tr('Open with'), panel.model.program_label(entry))]:
+                                 (tr('Modified'), display_cell(entry, 2))]:
                 field(general_form, label, value)
+            if not entry.is_dir and isinstance(panel.provider, LocalProvider):
+                # Program icon and name, with "Change…" to set the association without opening the file.
+                program = QWidget()
+                line = QHBoxLayout(program)
+                line.setContentsMargins(0, 0, 0, 0)
+                badge = QLabel()
+                name_label = QLabel()
+                name_label.setProperty('userContent', True)
+                change_program = QPushButton(tr('Change…'))
+                line.addWidget(badge); line.addWidget(name_label, 1); line.addWidget(change_program)
+                def show_program():
+                    from shiboken6 import isValid
+                    if not isValid(name_label):
+                        return
+                    icon = self.associations.icon(entry.name)
+                    badge.setPixmap(icon.pixmap(20, 20) if icon else QPixmap())
+                    badge.setVisible(bool(icon))
+                    name_label.setText(panel.model.program_label(entry))
+                show_program()
+                self.associations.changed.connect(show_program)
+                def stop_watching(_):
+                    try:
+                        self.associations.changed.disconnect(show_program)
+                    except (RuntimeError, TypeError):
+                        pass
+                dialog.finished.connect(stop_watching)
+                file_paths = self.active.local_file_paths()
+                change_program.clicked.connect(lambda: self.show_open_with(file_paths, assign=True))
+                general_form.addRow(tr('Open with') + ':', program)
+                rows.append((tr('Open with'), panel.model.program_label(entry)))
+            elif not entry.is_dir:
+                field(general_form, tr('Open with'), panel.model.program_label(entry))
             for label, value in [(tr('Full path'), panel.location(path=panel.provider.join(panel.path, entry.name))),
                                  (tr('Bytes'), display_cell(entry, 7)), (tr('Created'), display_cell(entry, 9)),
                                  (tr('Accessed'), display_cell(entry, 10)), (tr('Permissions'), display_cell(entry, 8)),
@@ -1506,8 +1584,49 @@ class Commander(QMainWindow):
         panel = self.active
         if panel.provider.readonly or not panel.tree.isEnabled():
             return
-        name = dialog_kit.ask_text(self, tr('New folder'), tr('New folder'), tr('Folder name:'),
-                                   subtitle=tr('In: {v0}').format(v0=panel.location()), action=tr('Create'), icon="mkdir")
+        # Like Total Commander: start from the name under the cursor, so "Season 1" becomes "Season 2" in a keystroke.
+        # Both choices are remembered: prefill on/off, and whether file names count too.
+        entry = panel.current_entry()
+        settings = self.settings
+        def suggestion(enabled, files):
+            if not enabled or entry is None or entry.name == "..":
+                return ""
+            if entry.is_dir:
+                return entry.name
+            return (os.path.splitext(entry.name)[0] or entry.name) if files else ""
+        prefill = str(settings.value('mkdir_prefill', True)).lower() not in ('false', '0')
+        from_files = str(settings.value('mkdir_prefill_files', True)).lower() not in ('false', '0')
+
+        def setup(dialog, edit):
+            options = QWidget()
+            row = QHBoxLayout(options)
+            row.setContentsMargins(0, 0, 0, 0)
+            toggle = QCheckBox(tr('Prefill the name under the cursor'))
+            toggle.setChecked(prefill)
+            source = QComboBox()
+            source.addItem(tr('Folders and files'), True)
+            source.addItem(tr('Folders only'), False)
+            source.setCurrentIndex(0 if from_files else 1)
+            source.setEnabled(prefill)
+            row.addWidget(toggle)
+            row.addWidget(source)
+            row.addStretch(1)
+            dialog.add(options)
+            def changed(*_):
+                enabled, files = toggle.isChecked(), bool(source.currentData())
+                source.setEnabled(enabled)
+                settings.setValue('mkdir_prefill', enabled)
+                settings.setValue('mkdir_prefill_files', files)
+                edit.setText(suggestion(enabled, files))
+                edit.selectAll()
+                edit.setFocus()
+            toggle.toggled.connect(changed)
+            source.currentIndexChanged.connect(changed)
+            dialog.prefill, dialog.prefill_source = toggle, source
+
+        name = dialog_kit.ask_text(self, tr('New folder'), tr('New folder'), tr('Folder name:'), suggestion(prefill, from_files),
+                                   subtitle=tr('In: {v0}').format(v0=panel.location()), action=tr('Create'), icon="mkdir",
+                                   allow_empty=False, setup=setup)
         if name:
             try:
                 path = panel.provider.join(panel.path, name)

@@ -224,12 +224,19 @@ public class MainActivity extends androidx.activity.ComponentActivity {
         String source=b.itemPath(item),from=peer;Toast.makeText(this,t("Downloading for preview…"),Toast.LENGTH_SHORT).show();
         worker.execute(()->{try{File copy=new File(core.callAttr("preview_copy",from,source).toString());runOnUiThread(()->openFile(copy));}catch(Exception e){error(e);}});
     }
-    void openFile(File file){try{Uri uri=FileProvider.getUriForFile(this,getPackageName()+".files",file);String type=android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(android.webkit.MimeTypeMap.getFileExtensionFromUrl(Uri.encode(file.getName())).toLowerCase(Locale.ROOT));
+    /** Content URI for another app; never for application-private state such as pairing keys. */
+    Uri grantable(File file)throws java.io.IOException{String path=file.getCanonicalPath();
+        String shared=new File(getFilesDir(),"Shared").getCanonicalPath(),cache=getCacheDir().getCanonicalPath(),data=getApplicationInfo().dataDir;
+        boolean inShared=path.startsWith(shared+File.separator),inPreview=path.startsWith(cache+File.separator)&&path.contains(File.separator+"soovee-preview"+File.separator);
+        boolean inStorage=path.startsWith("/storage/")&&!path.contains("/Android/data/")&&!path.contains("/Android/obb/");
+        if(!(inShared||inPreview||inStorage)||(!inShared&&!inPreview&&path.startsWith(new File(data).getCanonicalPath()+File.separator)))throw new SecurityException(t("This file cannot be opened in another app."));
+        return FileProvider.getUriForFile(this,getPackageName()+".files",file);}
+    void openFile(File file){try{Uri uri=grantable(file);String type=android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(android.webkit.MimeTypeMap.getFileExtensionFromUrl(Uri.encode(file.getName())).toLowerCase(Locale.ROOT));
         if(type==null&&FileBrowser.TEXT.contains(file.getName().substring(file.getName().lastIndexOf('.')+1).toLowerCase(Locale.ROOT)))type="text/plain";
         Intent view=new Intent(Intent.ACTION_VIEW).setDataAndType(uri,type==null?"*/*":type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         try{startActivity(Intent.createChooser(view,file.getName()));}catch(ActivityNotFoundException none){if(FileBrowser.TEXT.contains(file.getName().substring(file.getName().lastIndexOf('.')+1).toLowerCase(Locale.ROOT)))editText(file);else error(new Exception(t("No app on this device can open this file.")));}
     }catch(Exception e){error(e);}}
-    void share(List<File> files){try{ArrayList<Uri> uris=new ArrayList<>();for(File f:files)uris.add(FileProvider.getUriForFile(this,getPackageName()+".files",f));if(uris.isEmpty())return;
+    void share(List<File> files){try{ArrayList<Uri> uris=new ArrayList<>();for(File f:files)uris.add(grantable(f));if(uris.isEmpty())return;
         Intent send=uris.size()==1?new Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM,uris.get(0)):new Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM,uris);
         send.setType("*/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivity(Intent.createChooser(send,t("Share")));}catch(Exception e){error(e);}}
     /** Plain-text editor: keeps UTF-8 or the older Czech Windows encoding, saves atomically. */
@@ -403,6 +410,8 @@ public class MainActivity extends androidx.activity.ComponentActivity {
         transfers.add(ui.row("edit",0xffff9500,t("Device name"),null,state.optString("name"),true,()->{EditText field=new EditText(this);field.setText(state.optString("name"));dialog().setTitle(t("Device name")).setView(padded(field)).setNegativeButton(t("Cancel"),null).setPositiveButton(android.R.string.ok,(d,w)->callState("set_name",field.getText().toString())).show();}));
         transfers.add(ui.row("swap",0xffff9500,t("Device role"),null,t(controlled?"Controlled device":"Both directions"),true,()->dialog().setTitle(t("Device role")).setSingleChoiceItems(new String[]{t("Both directions"),t("Controlled device")},controlled?1:0,(d,w)->{d.dismiss();callState("set_role",w==1?"controlled":"both");}).show()));
         transfers.add(ui.row("devices",0xff34c759,t("Devices"),null,null,true,this::showNearby));
+        boolean requests=state.optBoolean("pairRequests",true);
+        transfers.add(ui.row("link",0xff34c759,t("Pairing requests"),t("Nearby devices can ask this one to show its pairing code"),t(requests?"On":"Off"),true,()->callState("set_pair_requests",!requests)));
         c.addView(ui.section(t("Transfers"),transfers,t(controlled?"Other devices can use folders shared from this device, but this device cannot open theirs.":"This device can open folders shared by paired devices, and they can open folders you share.")));
         ArrayList<View> support=new ArrayList<>();
         support.add(ui.row("log",0xff8e8e93,t("Diagnostic log"),t("Errors and events, for troubleshooting"),null,true,this::showLog));

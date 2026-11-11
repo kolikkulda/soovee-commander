@@ -1,4 +1,6 @@
 """Real loopback integration of pairing, authorization, resumable transfers and publication."""
+import os
+import shutil
 from pathlib import Path
 from threading import Event
 import time
@@ -495,11 +497,37 @@ def test_pair_request_makes_the_other_device_show_a_code_without_sending_it(devi
     assert peer.id == b.store.id and b.store.get(a.store.id)
     # Rapid repeated requests are refused; an active code is reused, not replaced.
     b.begin_pairing(); first = b.pairing['code']
+    b.PAIR_REQUEST_GAP = 2.0           # per-address gap shortened for the test
     time.sleep(2.1)
     a.request_pairing('127.0.0.1', b.port)
     assert b.pairing['code'] == first
     with pytest.raises(TransferError):
         a.request_pairing('127.0.0.1', b.port)
+
+
+def test_pair_requests_are_limited_per_address_and_can_be_turned_off(devices):
+    import time
+    from soovee_commander.lan import TransferService
+    a, b, _, _, events = devices
+    b.PAIR_REQUEST_GAP, b.PAIR_REQUEST_LIMIT = 0.0, 2
+    for _ in range(2):
+        b.last_pair_request = 0.0       # the global 2 s limit is tested elsewhere
+        a.request_pairing('127.0.0.1', b.port)
+    b.last_pair_request = 0.0
+    with pytest.raises(TransferError):  # third request from the same address in the window
+        a.request_pairing('127.0.0.1', b.port)
+    # Turned off: no request is accepted and nothing is shown.
+    b.pair_requests_by_host.clear(); b.last_pair_request = 0.0
+    b.set_pair_requests(False)
+    count = sum(e['kind'] == 'pair-request' for e in events)
+    with pytest.raises(TransferError):
+        a.request_pairing('127.0.0.1', b.port)
+    time.sleep(.1)
+    assert sum(e['kind'] == 'pair-request' for e in events) == count
+    # The choice is remembered across restarts.
+    assert TransferService(b.store.directory).accept_pair_requests is False
+    b.set_pair_requests(True)
+    assert TransferService(b.store.directory).accept_pair_requests is True
 
 
 def test_removing_a_peer_forgets_its_key_and_shares(devices, tmp_path):
@@ -534,3 +562,71 @@ def test_device_that_forgot_the_pairing_is_reported_as_not_recognized(devices, t
     with pytest.raises(PairingNotRecognized):
         with a.files_connection(b.store.id):
             pass
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='descriptor-relative operations are POSIX only')
+def test_device_operations_survive_folder_swapped_for_link_after_check(devices, tmp_path):
+    """A folder replaced by a link between the path check and the operation
+    must never let a remote peer create, write, rename or delete outside the share."""
+    import io
+    from soovee_commander.device_files import ANCHORED, DeviceProvider
+    from soovee_commander.providers import Entry
+    assert ANCHORED
+    a, b, _, _, _ = devices
+    peer = pair(a, b)
+    share = tmp_path / 'share'; share.mkdir()
+    outside = tmp_path / 'outside'; outside.mkdir()
+    (outside / 'victim.txt').write_bytes(b'keep')
+    (outside / 'victim-dir').mkdir()
+    b.shares.add(share, 'Share', a.store.id, writable=True)
+    provider = DeviceProvider(a, peer.id)
+    original = type(b.shares).resolve
+    armed = {'on': False}
+
+    def racing_resolve(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        if armed['on']:          # the check passed; now swap the folder for a link
+            armed['on'] = False
+            inner = share / 'inner'
+            if inner.is_dir() and not inner.is_symlink():
+                shutil.rmtree(inner)
+            inner.symlink_to(outside, target_is_directory=True)
+        return result
+
+    b.shares.resolve = racing_resolve.__get__(b.shares)
+
+    def attempt(operation):
+        inner = share / 'inner'
+        if inner.is_symlink():
+            inner.unlink()
+        inner.mkdir(exist_ok=True)
+        (inner / 'victim.txt').write_bytes(b'inside')
+        (inner / 'victim-dir').mkdir(exist_ok=True)
+        armed['on'] = True
+        with pytest.raises((TransferError, OSError)):
+            operation()
+
+    attempt(lambda: provider.mkdir('/Share/inner/created'))
+    attempt(lambda: provider.write_from('/Share/inner/planted.txt', io.BytesIO(b'bad'), lambda count: None))
+    attempt(lambda: provider.rename('/Share/inner/victim.txt', '/Share/moved.txt'))
+    attempt(lambda: provider.remove('/Share/inner/victim.txt', Entry('victim.txt', False, 4, 0)))
+    attempt(lambda: provider.remove('/Share/inner/victim-dir', Entry('victim-dir', True, 0, 0)))
+    attempt(lambda: provider.list('/Share/inner'))
+    assert sorted(item.name for item in outside.iterdir()) == ['victim-dir', 'victim.txt']
+    assert (outside / 'victim.txt').read_bytes() == b'keep'
+    assert not (share / 'moved.txt').exists()
+    # Without a swap the same operations work normally.
+    b.shares.resolve = original.__get__(b.shares)
+    (share / 'inner').unlink()
+    (share / 'inner').mkdir()
+    provider.mkdir('/Share/inner/created')
+    provider.write_from('/Share/inner/file.txt', io.BytesIO(b'ok'), lambda count: None)
+    provider.rename('/Share/inner/file.txt', '/Share/inner/renamed.txt')
+    with pytest.raises(TransferError):
+        provider.mkdir('/Share/inner/created')
+    provider.write_from('/Share/inner/other.txt', io.BytesIO(b'x'), lambda count: None)
+    with pytest.raises(TransferError):
+        provider.rename('/Share/inner/other.txt', '/Share/inner/renamed.txt')
+    provider.remove('/Share/inner/created', Entry('created', True, 0, 0))
+    assert sorted(item.name for item in (share / 'inner').iterdir()) == ['other.txt', 'renamed.txt']
+    assert (share / 'inner/renamed.txt').read_bytes() == b'ok'

@@ -22,6 +22,7 @@ from .columns import COLUMNS, IDS, ColumnsDialog, defaults as default_columns, v
 from .providers import LocalProvider
 from .filetypes import extension
 from .native_apps import application, applications_for_file
+from .associations import app_icon
 from .frozen_columns import FrozenColumns
 from shiboken6 import isValid
 from .providers import ArchiveProvider, LocalProvider, RemoteProvider, is_archive
@@ -537,6 +538,7 @@ class Panel(QFrame):
         with QSignalBlocker(self.tree.header()):
             self.tree.header().setSortIndicator(tab.column, Qt.SortOrder.DescendingOrder if tab.descending else Qt.SortOrder.AscendingOrder)
         self.model.local_packages = isinstance(tab.provider, LocalProvider)
+        self.model.program_icon = lambda entry: None if entry.is_dir or not isinstance(tab.provider, LocalProvider) else self.window.associations.icon(entry.name)
         self.model.program_label = lambda entry: (tr('Run application') if sys.platform == "darwin" and isinstance(tab.provider, LocalProvider) and entry.name.lower().endswith(".app") else "") if entry.is_dir else self.window.associations.label(entry.name) if isinstance(tab.provider, LocalProvider) else tr('Internal preview')
         self.model.path_label = lambda entry: self.location(tab=tab, path=tab.provider.join(tab.path, entry.name))
         self.model.directory_sizes = tab.sizes.get(self.location_key(tab.provider, tab.path), {})
@@ -1193,7 +1195,7 @@ class Panel(QFrame):
                 if value is None: return None
                 from .storage import VolumeInfo
                 name = provider.label + ' · ' + value['name']
-                return VolumeInfo(name, value['path'], value['total'], value['free'], value['available'], value['readonly'], 'Soovee')
+                return VolumeInfo(name, source[1], value['total'], value['free'], value['available'], value['readonly'], 'Soovee')
             return read_volume(source)
         self.window.run_task(read, loaded, failed, read_only=True)
 
@@ -1387,7 +1389,7 @@ class Panel(QFrame):
                     candidates.insert(0, Application(custom, Path(custom).stem))
                 for app in candidates:
                     label = app.name + (tr(' · custom default') if app.path == custom else "")
-                    action = submenu.addAction(label, lambda checked=False, selected=app: self.window.associations.open(paths, selected))
+                    action = submenu.addAction(app_icon(app.path), label, lambda checked=False, selected=app: self.window.associations.open(paths, selected))
                     action.setToolTip(app.path)
             self.window.run_task(lambda _: applications_for_file(paths[0]), loaded, lambda _: loaded([]), read_only=True)
         menu.addAction(commands["view"])

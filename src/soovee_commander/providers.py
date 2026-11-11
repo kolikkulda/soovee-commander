@@ -245,7 +245,7 @@ class LocalProvider(Provider):
                     return
                 os.link(temporary, path)
             except OSError as exc:
-                if exc.errno not in (errno.EPERM, errno.EACCES, errno.EOPNOTSUPP, errno.ENOSYS, errno.EXDEV):
+                if exc.errno not in (errno.EPERM, errno.EACCES, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS, errno.EXDEV, errno.EMLINK):
                     raise
                 # FAT/exFAT and some network shares have no hard links. Exclusive
                 # creation still prevents overwrites; clean the new file on failure.
@@ -266,8 +266,23 @@ class LocalProvider(Provider):
         os.mkdir(path)
 
     def rename(self, path: str, destination: str) -> None:
-        if not rename_no_replace(path, destination):
-            raise OSError('This filesystem does not support safe renaming. Use copying instead.')
+        if rename_no_replace(path, destination):
+            return
+        # Network shares (SMB/NFS) and some disks have no atomic "rename unless the
+        # target exists". Check the target first, then rename normally.
+        if os.path.lexists(destination):
+            same = False
+            with contextlib.suppress(OSError):
+                a, b = os.lstat(path), os.lstat(destination)
+                same = (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)   # only the letter case changes
+            if not same:
+                raise FileExistsError('An item with this name already exists.')
+        try:
+            os.rename(path, destination)
+        except OSError as exc:
+            if exc.errno == errno.EXDEV:
+                raise OSError('This filesystem does not support safe renaming. Use copying instead.') from None
+            raise
 
     def remove(self, path: str, entry: Entry) -> None:
         if entry.is_dir and not entry.is_link:

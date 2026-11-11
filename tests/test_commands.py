@@ -61,3 +61,31 @@ def test_unknown_bar_command_cannot_execute_an_external_program():
     config["top"] = [{"command": "run_shell", "label": "something"}]
     with pytest.raises(ValueError):
         validate_config(config)
+
+
+def test_file_panel_keys_are_not_menu_shortcuts_on_macos(monkeypatch):
+    """On macOS text after a tab becomes a native menu key equivalent that would
+    swallow Return, Backspace or Space in dialogs; show it as plain text there."""
+    from PySide6.QtGui import QKeySequence
+    from soovee_commander import commands
+    key = QKeySequence('Return')
+    monkeypatch.setattr(commands.sys, 'platform', 'darwin')
+    assert '\t' not in commands.menu_text('Open item', key) and commands.menu_text('Open item', key).startswith('Open item  (')
+    monkeypatch.setattr(commands.sys, 'platform', 'win32')
+    assert commands.menu_text('Open item', key).startswith('Open item\t')
+    assert commands.menu_text('Copy') == 'Copy'
+
+
+def test_rename_works_on_shares_without_atomic_no_replace(tmp_path, monkeypatch):
+    import pytest
+    import soovee_commander.providers as providers
+    monkeypatch.setattr(providers, 'rename_no_replace', lambda source, destination: False)   # SMB / NFS
+    provider = providers.LocalProvider()
+    (tmp_path / 'a.srt').write_text('a'); (tmp_path / 'taken.srt').write_text('keep')
+    provider.rename(str(tmp_path / 'a.srt'), str(tmp_path / 'b.srt'))
+    with pytest.raises(FileExistsError):
+        provider.rename(str(tmp_path / 'b.srt'), str(tmp_path / 'taken.srt'))
+    assert (tmp_path / 'taken.srt').read_text() == 'keep' and (tmp_path / 'b.srt').exists()
+    (tmp_path / 'dir').mkdir()
+    provider.rename(str(tmp_path / 'dir'), str(tmp_path / 'folder'))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ['b.srt', 'folder', 'taken.srt']

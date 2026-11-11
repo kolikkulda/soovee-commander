@@ -87,7 +87,7 @@ def test_storage_consent_capacity_private_paths_and_revocation(mobile,tmp_path):
         assert {entry.name for entry in remote.list('/')}=={'Shared','Internal storage'}
         capacity=remote.space('/Internal storage/Download')
         assert capacity['total']>0 and 0<=capacity['available']<=capacity['free']<=capacity['total']
-        assert capacity['path']==str(storage/'Download')
+        assert capacity['path']==''   # the host path is not disclosed
         assert [entry.name for entry in remote.list('/Internal storage/Android')]==['media']
         with pytest.raises(TransferError): remote.list('/Internal storage/Android/data')
         with pytest.raises(ValueError): mobile.local_file('/Internal storage/Android/data')

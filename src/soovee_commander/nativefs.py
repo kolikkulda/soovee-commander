@@ -35,9 +35,34 @@ def rename_no_replace(source, destination):
     if result == 0:
         return True
     error = ctypes.get_errno()
-    if error in (errno.EXDEV, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
+    # SMB and other network shares: macOS reports ENOTSUP (45), not EOPNOTSUPP (102).
+    if error in (errno.EXDEV, errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
         return False
     raise OSError(error, os.strerror(error), str(destination))
+
+
+def rename_at_no_replace(source_dir, source, destination_dir, destination):
+    """Rename between directory descriptors without replacing an existing name.
+
+    Returns False when the filesystem has no atomic no-replace rename; the caller
+    then checks for the target itself.
+    """
+    library = ctypes.CDLL(None, use_errno=True)
+    if sys.platform in ("darwin", "ios", "tvos") and hasattr(library, "renameatx_np"):
+        function = library.renameatx_np
+        flags = 0x4  # RENAME_EXCL
+    elif hasattr(library, "renameat2"):
+        function = library.renameat2
+        flags = 1  # RENAME_NOREPLACE
+    else:
+        return False
+    function.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    if function(source_dir, os.fsencode(source), destination_dir, os.fsencode(destination), flags) == 0:
+        return True
+    error = ctypes.get_errno()
+    if error in (errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS, errno.EINVAL):
+        return False
+    raise OSError(error, os.strerror(error), destination)
 
 
 class _AttrList(ctypes.Structure):

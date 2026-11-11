@@ -173,7 +173,7 @@ def snapshot(host=None):
     result = dict(enabled=True, id=service.store.id, name=service.store.name, address=address, port=service.port,
                   localNetwork=address != '127.0.0.1',
                   folder=str(shared), role=service.shares.mode, code=session['code'] if active else '',
-                  storage=storage_snapshot(), storageSharing=storage_sharing,
+                  storage=storage_snapshot(), storageSharing=storage_sharing, pairRequests=service.accept_pair_requests,
                   expires=max(0, int(session['expires'] - time.monotonic())) if active else 0,
                   peers=[dict(id=p.id, name=p.name, host=p.host, port=p.port) for p in service.store.peers()])
     if active:
@@ -192,6 +192,11 @@ def renew():
 
 def set_role(role):
     service.shares.set_mode(role)
+    return snapshot()
+
+
+def set_pair_requests(enabled):
+    service.set_pair_requests(enabled is True or str(enabled).lower() in ('true', '1'))
     return snapshot()
 
 

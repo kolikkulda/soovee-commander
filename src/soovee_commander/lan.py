@@ -2,6 +2,7 @@
 import contextlib
 import hashlib
 import ipaddress
+import json
 import os
 import secrets
 import socket
@@ -41,6 +42,12 @@ class TransferService:
         self.outgoing_cancels = {}
         self.pairing = None
         self.last_pair_request = 0.0
+        self.pair_requests_by_host = {}
+        try:
+            stored = json.loads((self.store.directory / 'pairing.json').read_text(encoding='utf-8'))
+            self.accept_pair_requests = stored.get('requests', True) is not False
+        except (OSError, ValueError, AttributeError):
+            self.accept_pair_requests = True
         self.last_progress = {}
 
     def start(self, host='127.0.0.1', port=0):
@@ -179,19 +186,37 @@ class TransferService:
             self.shares.revoke_peer(peer.id)
         self.store.add(peer)
 
+    def set_pair_requests(self, enabled):
+        """Allow or refuse nearby devices asking this one to show its pairing code."""
+        from .lan_store import atomic_json
+        self.accept_pair_requests = bool(enabled)
+        atomic_json(self.store.directory / 'pairing.json', dict(requests=self.accept_pair_requests))
+
+    # One request per address every 10 s and at most 5 per address in 10 minutes,
+    # so a device on the network cannot keep popping up the pairing screen.
+    PAIR_REQUEST_GAP, PAIR_REQUEST_WINDOW, PAIR_REQUEST_LIMIT = 10.0, 600.0, 5
+
     def _receive_pair_request(self, connection, host, request):
         """Another device asks this one to show its pairing code.
 
         Nothing secret travels: the code is only displayed here and typed (or
         scanned) on the asking device, and the SPAKE2 pairing that follows
-        still needs explicit approval on both sides. Requests are rate limited.
+        still needs explicit approval on both sides. Requests are rate limited
+        per address and can be turned off.
         """
+        if not self.accept_pair_requests:
+            raise TransferError('This device does not accept pairing requests.')
         name = valid_name(request.get('name') or 'Device')
         with self.lock:
             now = time.monotonic()
-            if now - self.last_pair_request < 2:
+            recent = [value for value in self.pair_requests_by_host.get(host, []) if now - value < self.PAIR_REQUEST_WINDOW]
+            if now - self.last_pair_request < 2 or recent and now - recent[-1] < self.PAIR_REQUEST_GAP or len(recent) >= self.PAIR_REQUEST_LIMIT:
                 raise TransferError('Wait a moment before asking again.')
             self.last_pair_request = now
+            self.pair_requests_by_host = {key: [value for value in values if now - value < self.PAIR_REQUEST_WINDOW]
+                                          for key, values in self.pair_requests_by_host.items() if key != host}
+            self.pair_requests_by_host = dict(list(self.pair_requests_by_host.items())[-255:])
+            self.pair_requests_by_host[host] = recent + [now]
             session = self.pairing
             if session is None or now >= session['expires'] or session['attempts'] >= 5:
                 self.begin_pairing()

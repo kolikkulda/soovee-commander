@@ -1,8 +1,11 @@
 """Explicit per-peer shared roots and authenticated filesystem RPC."""
+import contextlib
+import errno
 import hashlib
 import math
 import os
 import shutil
+import stat
 from pathlib import Path
 import tempfile
 from threading import RLock
@@ -12,6 +15,7 @@ from urllib.parse import quote
 from .lan_files import is_link, open_regular, relative_path, signature
 from .lan_protocol import CHUNK, TransferError, receive_message, send_message
 from .lan_store import atomic_json, valid_id
+from .nativefs import rename_at_no_replace
 from .providers import LocalProvider, Entry, Provider
 
 
@@ -125,6 +129,128 @@ class SharedFolders:
             return path
 
 
+# Remote operations act relative to directory descriptors opened without following
+# links, so swapping a checked folder for a link before the operation cannot lead
+# outside the share (time-of-check/time-of-use). Windows has no *at() calls; there
+# creating links needs administrator rights and the path checks above apply.
+ANCHORED = os.open in os.supports_dir_fd and os.mkdir in os.supports_dir_fd and hasattr(os, 'O_NOFOLLOW') and hasattr(os, 'O_DIRECTORY')
+_DIR_FLAGS = os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0) | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0)
+
+
+@contextlib.contextmanager
+def anchored(shares, peer, identity, relative, write=False):
+    """Yield (parent directory descriptor, final name) for a path inside a share.
+
+    The root is opened and compared with the identity recorded when it was
+    shared; every folder below it is opened with O_NOFOLLOW. For the share root
+    itself the name is None and the descriptor is the root.
+    """
+    shares.resolve(peer, identity, relative, write=write)   # grants, protected trees, names
+    with shares.lock:
+        item = next((item for item in shares.value['shares'] if item['id'] == identity and peer in item['peers']), None)
+    if item is None:
+        raise TransferError('This shared folder is unavailable or read only.')
+    descriptors = []
+    try:
+        root = os.open(item['path'], _DIR_FLAGS)
+        descriptors.append(root)
+        info = os.fstat(root)
+        if [info.st_dev, info.st_ino] != item['identity']:
+            raise TransferError('The shared folder was moved or replaced.')
+        parts = relative.split('/') if relative else []
+        current = root
+        for part in parts[:-1]:
+            current = _open_dir_at(current, part)
+            descriptors.append(current)
+        yield current, (parts[-1] if parts else None)
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def _open_dir_at(parent, name):
+    try:
+        return os.open(name, _DIR_FLAGS, dir_fd=parent)
+    except OSError as exc:
+        if exc.errno in (errno.ELOOP, errno.ENOTDIR, getattr(errno, 'EMLINK', -1)):
+            raise TransferError('Links are not accessible through a shared folder.') from None
+        raise
+
+
+@contextlib.contextmanager
+def anchored_directory(shares, peer, identity, relative):
+    """Yield a descriptor of the shared folder itself (for listing and capacity)."""
+    with anchored(shares, peer, identity, relative) as (parent, name):
+        if name is None:
+            yield parent
+            return
+        descriptor = _open_dir_at(parent, name)
+        try:
+            yield descriptor
+        finally:
+            os.close(descriptor)
+
+
+def _lstat_at(parent, name):
+    try:
+        return os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+
+
+def _remove_at(parent, name):
+    info = _lstat_at(parent, name)
+    if info is None:
+        raise FileNotFoundError(name)
+    if stat.S_ISDIR(info.st_mode):
+        shutil.rmtree(name, dir_fd=parent)      # fd-based and safe against link swaps
+    else:
+        os.unlink(name, dir_fd=parent)
+
+
+def _open_anchored(shares, peer, identity, relative):
+    """Open a shared regular file through its anchored parent, never through a link."""
+    with anchored(shares, peer, identity, relative) as (parent, name):
+        if name is None:
+            raise TransferError('Only regular files can be transferred.')
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_CLOEXEC', 0), dir_fd=parent)
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise TransferError('Only regular files can be transferred.')
+    return os.fdopen(descriptor, 'rb')
+
+
+def _put_at(parent, name, producer):
+    """Receive into a hidden file next to the target, then publish it without replacing anything."""
+    temporary = '.soovee-' + uuid.uuid4().hex + '.part'
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0), 0o644, dir_fd=parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            producer(output)
+            output.flush()
+            os.fsync(output.fileno())
+        try:
+            if not rename_at_no_replace(parent, temporary, parent, name):
+                raise OSError(errno.ENOTSUP, 'no atomic rename')
+            return
+        except FileExistsError:
+            raise TransferError('The destination exists or is not a writable file location.') from None
+        except OSError:
+            # No hard links (FAT, exFAT, some shares, Android): exclusive create and copy.
+            try:
+                target = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0), 0o644, dir_fd=parent)
+            except FileExistsError:
+                raise TransferError('The destination exists or is not a writable file location.') from None
+            source = os.open(temporary, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0), dir_fd=parent)
+            with os.fdopen(source, 'rb') as reader, os.fdopen(target, 'wb') as writer:
+                shutil.copyfileobj(reader, writer, 1024 * 1024)
+                writer.flush()
+                os.fsync(writer.fileno())
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary, dir_fd=parent)
+
+
 def handle_files(service, sock, peer):
     request = receive_message(sock)
     action = request.get('action')
@@ -141,15 +267,32 @@ def handle_files(service, sock, peer):
         raise TransferError('This item contains a protected folder and cannot be changed.')
     provider = LocalProvider()
     if action == 'space':
-        usage = shutil.disk_usage(path)
-        total, free, available = usage.total, usage.free, usage.free
-        if hasattr(os, 'statvfs'):
-            info = os.statvfs(path); block = info.f_frsize or info.f_bsize
+        if ANCHORED and hasattr(os, 'fstatvfs'):
+            with anchored_directory(service.shares, peer.id, request.get('share'), relative) as descriptor:
+                info = os.fstatvfs(descriptor)
+            block = info.f_frsize or info.f_bsize
             total, free, available = info.f_blocks * block, info.f_bfree * block, info.f_bavail * block
+        else:
+            usage = shutil.disk_usage(path)
+            total, free, available = usage.total, usage.free, usage.free
         writable = any(item['id'] == request.get('share') and item['writable'] for item in service.shares.available(peer.id))
-        send_message(sock, dict(total=total, free=free, available=available, path=str(path), readonly=not writable or not os.access(path, os.W_OK)))
+        # The host's absolute path is not needed by the other device; an empty string keeps older clients working.
+        send_message(sock, dict(total=total, free=free, available=available, path='', readonly=not writable or not os.access(path, os.W_OK)))
     elif action == 'list':
-        values = provider.list(str(path))
+        if ANCHORED:
+            values = []
+            with anchored_directory(service.shares, peer.id, request.get('share'), relative) as descriptor:
+                with os.scandir(descriptor) as entries:
+                    for item in entries:
+                        try:
+                            info = item.stat(follow_symlinks=False)
+                        except OSError:
+                            continue
+                        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                            continue    # links, devices, sockets
+                        values.append(Entry(item.name, stat.S_ISDIR(info.st_mode), info.st_size, info.st_mtime))
+        else:
+            values = provider.list(str(path))
         # Do not advertise links, device nodes or application-private transfer staging.
         result = []
         for entry in values:
@@ -164,7 +307,7 @@ def handle_files(service, sock, peer):
             result.append(dict(name=entry.name, directory=entry.is_dir, size=entry.size, modified=entry.modified))
         send_message(sock, dict(entries=result))
     elif action == 'get':
-        with open_regular(path) as stream:
+        with (_open_anchored(service.shares, peer.id, request.get('share'), relative) if ANCHORED else open_regular(path)) as stream:
             before = signature(os.fstat(stream.fileno()))
             digest = hashlib.sha256()
             send_message(sock, dict(size=before[2]))
@@ -208,12 +351,20 @@ def handle_files(service, sock, peer):
                 remaining -= len(block)
             if result.hexdigest() != digest:
                 raise TransferError('File integrity verification failed.')
-        provider.write_with(str(path), producer, lambda count: service.shares.resolve(peer.id, request.get('share'), relative, write=True), overwrite=False)
+        if ANCHORED:
+            with anchored(service.shares, peer.id, request.get('share'), relative, write=True) as (parent, name):
+                _put_at(parent, name, producer)
+        else:
+            provider.write_with(str(path), producer, lambda count: service.shares.resolve(peer.id, request.get('share'), relative, write=True), overwrite=False)
         send_message(sock, dict(verified=True))
     elif action == 'mkdir':
         if not relative:
             raise TransferError('Choose a folder inside a shared root.')
-        provider.mkdir(str(path))
+        if ANCHORED:
+            with anchored(service.shares, peer.id, request.get('share'), relative, write=True) as (parent, name):
+                os.mkdir(name, dir_fd=parent)
+        else:
+            provider.mkdir(str(path))
         send_message(sock, dict(created=True))
     elif action == 'rename':
         destination = request.get('destination')
@@ -222,7 +373,19 @@ def handle_files(service, sock, peer):
         target = service.shares.resolve(peer.id, request.get('share'), destination, write=True)
         if target == path or path in target.parents:
             raise TransferError('Choose a different destination outside this folder.')
-        provider.rename(str(path), str(target))
+        if ANCHORED:
+            with anchored(service.shares, peer.id, request.get('share'), relative, write=True) as (source_parent, source_name), \
+                    anchored(service.shares, peer.id, request.get('share'), destination, write=True) as (target_parent, target_name):
+                try:
+                    atomic = rename_at_no_replace(source_parent, source_name, target_parent, target_name)
+                except FileExistsError:
+                    raise TransferError('An item with this name already exists.') from None
+                if not atomic:
+                    if _lstat_at(target_parent, target_name) is not None:
+                        raise TransferError('An item with this name already exists.')
+                    os.rename(source_name, target_name, src_dir_fd=source_parent, dst_dir_fd=target_parent)
+        else:
+            provider.rename(str(path), str(target))
         send_message(sock, dict(renamed=True))
     elif action == 'remove':
         if not relative:
@@ -238,8 +401,12 @@ def handle_files(service, sock, peer):
             service.shares.resolve(peer.id, request.get('share'), checked, write=True)
             if current.is_dir():
                 candidates.extend(current.iterdir())
-        info = path.stat()
-        provider.remove(str(path), Entry(path.name, path.is_dir(), info.st_size, info.st_mtime))
+        if ANCHORED:
+            with anchored(service.shares, peer.id, request.get('share'), relative, write=True) as (parent, name):
+                _remove_at(parent, name)
+        else:
+            info = path.stat()
+            provider.remove(str(path), Entry(path.name, path.is_dir(), info.st_size, info.st_mtime))
         send_message(sock, dict(removed=True))
     else:
         raise TransferError('This remote filesystem operation is not supported.')
@@ -403,7 +570,7 @@ class DeviceProvider(Provider):
             send_message(sock, request); value = receive_message(sock)
         if any(type(value.get(key)) is not int for key in ('total', 'free', 'available')) or not 0 <= value['available'] <= value['free'] <= value['total']:
             raise TransferError('Invalid device capacity information.')
-        if type(value.get('readonly')) is not bool or not isinstance(value.get('path'), str):
+        if type(value.get('readonly')) is not bool or not isinstance(value.get('path', ''), str):
             raise TransferError('Invalid device capacity information.')
         value['name'] = path.strip('/').split('/')[0]
         return value

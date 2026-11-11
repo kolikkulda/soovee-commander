@@ -74,11 +74,9 @@ class StandardDialog(QDialog):
         self.cancel.setText(tr('Cancel'))
         self.ok.setText(action or tr('OK'))
         self.ok.setObjectName("danger" if destructive else "primary")
-        if destructive:  # Enter must not confirm an irreversible action by accident.
-            self.ok.setAutoDefault(False)
-            self.cancel.setDefault(True)
-        else:
-            self.ok.setDefault(True)
+        # Enter confirms the main action (as in Total Commander); Escape cancels.
+        self.cancel.setAutoDefault(False)
+        self.ok.setDefault(True)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         root.addWidget(self.buttons)
@@ -139,7 +137,7 @@ def confirm(parent, title, heading, message="", *, items=None, action=None, dest
 
 
 def ask_text(parent, title, heading, label, text="", *, subtitle=None, action=None, icon=None, select_stem=False,
-             password=False, allow_empty=False):
+             password=False, allow_empty=False, setup=None):
     """One-line input with the same layout as other dialogs; None when cancelled."""
     dialog = StandardDialog(parent, title, heading, subtitle, icon=icon, action=action)
     caption = QLabel(label)
@@ -159,6 +157,9 @@ def ask_text(parent, title, heading, label, text="", *, subtitle=None, action=No
     else:
         edit.selectAll()
     dialog.edit = edit
+    if setup is not None:   # extra options below the field (they may change the text)
+        setup(dialog, edit)
+    edit.returnPressed.connect(lambda: dialog.ok.isEnabled() and dialog.ok.click())
     if dialog.exec() != QDialog.DialogCode.Accepted:
         return None
     return edit.text()

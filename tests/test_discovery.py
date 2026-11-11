@@ -49,7 +49,7 @@ def test_capacity_and_authenticated_endpoint_update(tmp_path):
         provider=DeviceProvider(a,peer.id)
         value=provider.space('/')
         assert 0<value['total'] and 0<=value['available']<=value['free']<=value['total']
-        assert value['path']==str(root) and not value['readonly']
+        assert value['path']=='' and not value['readonly']
         b.stop();b.start('127.0.0.1',0)
         verify_endpoint(a,peer.id,'127.0.0.1',b.port)
         assert a.store.get(peer.id).port==b.port

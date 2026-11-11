@@ -6,7 +6,7 @@ import sys
 
 from .command_help import HELP
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QTimer, QObject, Qt, Signal
 from PySide6.QtGui import QAction, QKeySequence
 
 
@@ -218,6 +218,20 @@ def validate_config(config):
     return result
 
 
+def menu_text(title, key=None):
+    """Menu label for a command whose key is handled by the file panel itself.
+
+    Qt turns text after a tab into a real menu shortcut. On macOS that becomes
+    a native key equivalent that also fires while a dialog is open, so Return,
+    Backspace, Space or Cmd+C would never reach the dialog's text field. There
+    the key is shown as plain text instead.
+    """
+    if key is None:
+        return title
+    label = key.toString(QKeySequence.SequenceFormat.NativeText)
+    return f"{title}  ({label})" if sys.platform == "darwin" else f"{title}\t{label}"
+
+
 class CommandRegistry(QObject):
     changed = Signal()
 
@@ -229,7 +243,9 @@ class CommandRegistry(QObject):
         for spec in COMMANDS:
             action = QAction(tr(spec.title), window)
             action.setObjectName("command_" + spec.id)
-            action.triggered.connect(lambda checked=False, command=spec.id: self.execute(command))
+            # Run after the native menu has finished handling the key: a modal dialog opened
+            # inside macOS menu key handling does not receive Return/Enter.
+            action.triggered.connect(lambda checked=False, command=spec.id: QTimer.singleShot(0, lambda: self.execute(command)))
             action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             if spec.scope == "window":
                 window.addAction(action)
@@ -265,7 +281,7 @@ class CommandRegistry(QObject):
             action = self.actions[spec.id]
             keys = [QKeySequence.fromString(key, QKeySequence.SequenceFormat.PortableText) for key in valid["keys"][spec.id]]
             action.setShortcuts(keys if spec.scope == "window" else [])
-            action.setText(tr(spec.title) if spec.scope == "window" or not keys else tr(spec.title) + "\t" + keys[0].toString(QKeySequence.SequenceFormat.NativeText))
+            action.setText(menu_text(tr(spec.title), keys[0] if keys and spec.scope != "window" else None))
             if spec.id in HELP:
                 action.setStatusTip(tr(HELP[spec.id]))
         if persist:

@@ -784,10 +784,12 @@ def test_remapped_shortcuts_buttons_menus_and_restart_share_one_command(app, tmp
     QTest.keyClick(window.left.tree, Qt.Key.Key_F2)
     assert not calls
     QTest.keyClick(window.left.tree, Qt.Key.Key_F9)
+    app.processEvents()     # menu commands run after the key event finishes
     assert calls == ["rename"]
     assert window.bottom_buttons[0].text() == "F9  Jméno"
     window.bottom_buttons[0].click()
     window.commands.actions["rename"].trigger()
+    app.processEvents()
     assert len(calls) == 3
     before = copy.deepcopy(window.commands.config)
     bad = copy.deepcopy(config)
@@ -1186,7 +1188,7 @@ def test_application_package_opens_normally_and_ctrl_pgdown_browses_it(app, tmp_
 
 def test_languages_compact_toolbar_and_panel_center_reset(app, tmp_path):
     from soovee_commander.i18n import tr, current_language
-    from PySide6.QtWidgets import QPushButton
+    from PySide6.QtWidgets import QPushButton, QLabel
     from PySide6.QtCore import QPoint
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
     QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
@@ -2532,7 +2534,7 @@ def test_dialog_kit_names_actions_and_protects_destructive_confirmations(app, tm
     assert not dialog_kit.confirm(window, 'Delete', 'Delete 12 items permanently?', items=[f'f{i}' for i in range(12)],
                                   action='Delete permanently', destructive=True)
     assert seen['ok'] == 'Delete permanently' and seen['ok_name'] == 'danger'
-    assert seen['cancel_default'] and not seen['ok_default'] and seen['items'] == dialog_kit.MAX_LISTED + 1
+    assert seen['ok_default'] and not seen['cancel_default']  # Enter confirms, as in Total Commander and seen['items'] == dialog_kit.MAX_LISTED + 1
     dialog_kit.confirm(window, 'Copy', 'Copy 1 items?', items=['a'], action='Copy')
     assert seen['ok_name'] == 'primary' and seen['ok_default']
 
@@ -2608,3 +2610,137 @@ def test_asking_a_nearby_device_for_a_code_opens_its_pairing_window(app, tmp_pat
     assert asking.pair_button.text() == 'Pair device'
     asking.shutdown(); shown.shutdown(); settle(app, a); settle(app, b)
     a.close(); b.close(); app.processEvents()
+
+
+def test_f7_suggests_name_under_cursor_and_archive_goes_next_to_items(app, tmp_path, monkeypatch):
+    from soovee_commander import dialog_kit
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    left = tmp_path / "left"; right = tmp_path / "right"; left.mkdir(); right.mkdir()
+    (left / "Season 1").mkdir(); (left / "Season 1" / "a.txt").write_text("a")
+    window = Commander(str(left), str(right)); window.show(); settle(app, window)
+    panel = window.left
+    panel.tree.setCurrentIndex(panel.model.index_for_name("Season 1")); app.processEvents()
+    asked = {}
+    monkeypatch.setattr(dialog_kit, 'ask_text', lambda *args, **kwargs: asked.update(args=args) or None)
+    window.mkdir()
+    assert asked['args'][4] == "Season 1"
+    captured = {}
+    def accept(dialog):
+        from PySide6.QtWidgets import QLineEdit
+        captured['path'] = [edit for edit in dialog.findChildren(QLineEdit) if edit.text().endswith('.zip')][0].text()
+        return QDialog.DialogCode.Accepted
+    monkeypatch.setattr(dialog_kit.StandardDialog, 'exec', accept)
+    queued = []
+    monkeypatch.setattr(window, 'enqueue', lambda title, work: queued.append(title))
+    window.pack()
+    assert captured['path'] == str(left / "Season 1.zip") and queued
+    window.close(); app.processEvents()
+
+
+def test_open_with_can_save_for_related_types_without_opening(app, tmp_path, monkeypatch):
+    from soovee_commander.native_apps import Application
+    import soovee_commander.associations as associations
+    from PySide6.QtCore import QProcess
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    movie = tmp_path / "film.mkv"; movie.write_bytes(b"x")
+    player = tmp_path / "Player.app"; player.mkdir()
+    monkeypatch.setattr(associations, "applications_for_file", lambda path: [Application(str(player), "Player")])
+    launched = []
+    monkeypatch.setattr(QProcess, "startDetached", lambda program, args: (launched.append(program) or True, 1))
+    window = Commander(str(tmp_path), str(tmp_path)); window.show(); settle(app, window)
+    dialog = window.show_open_with([str(movie)]); settle(app, window)
+    assert dialog.apply_button.isEnabled() and '.mp4' in dialog.related and not dialog.related_box.isVisible()
+    row = next(i for i in range(dialog.apps.count()) if dialog.apps.item(i).data(Qt.ItemDataRole.UserRole) == str(player))
+    dialog.apps.setCurrentRow(row)
+    dialog.remember.setChecked(True)
+    dialog.related['.avi'].setChecked(False)
+    dialog.apply_button.click(); settle(app, window)
+    custom = window.associations.custom
+    assert custom['.mkv'] == custom['.mp4'] == str(player) and '.avi' not in custom
+    assert launched == []          # saved only, nothing opened
+    window.close(); app.processEvents()
+
+
+def test_plain_ftp_is_marked_insecure_and_needs_confirmation(app, tmp_path, monkeypatch):
+    from soovee_commander import dialog_kit
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / 'prefs'))
+    window = Commander(str(tmp_path), str(tmp_path)); settle(app, window)
+    dialog = ConnectDialog(window)
+    assert dialog.protocol.itemText(0) == 'SFTP' and dialog.protocol.currentText() == 'SFTP'
+    dialog.protocol.setCurrentText('FTP')
+    assert 'c93a3a' in dialog.note.styleSheet()
+    answers = []
+    monkeypatch.setattr(dialog_kit, 'confirm', lambda *args, **kwargs: answers.append(args) or False)
+    dialog.host.setText('ftp://user@127.0.0.1/')     # a pasted ftp:// address is warned about too
+    dialog.protocol.setCurrentText('SFTP')
+    dialog.accept()
+    assert answers and dialog.result() != dialog.DialogCode.Accepted
+    monkeypatch.setattr(dialog_kit, 'confirm', lambda *args, **kwargs: True)
+    dialog.accept()
+    assert dialog.result() == dialog.DialogCode.Accepted
+    secure = ConnectDialog(window)
+    secure.host.setText('sftp.example.com')
+    monkeypatch.setattr(dialog_kit, 'confirm', lambda *args, **kwargs: pytest.fail('SFTP needs no warning'))
+    secure.accept()
+    assert secure.result() == secure.DialogCode.Accepted
+
+
+def test_f7_prefill_can_be_turned_off_or_limited_to_folders(app, tmp_path, monkeypatch):
+    from soovee_commander import dialog_kit
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    left = tmp_path / "left"; left.mkdir(); (left / "Episode 1.mkv").write_text("v")
+    window = Commander(str(left), str(tmp_path)); window.show(); settle(app, window)
+    window.left.tree.setCurrentIndex(window.left.model.index_for_name("Episode 1.mkv")); app.processEvents()
+    seen = []
+    def run(dialog):
+        seen.append(dialog.edit.text())
+        dialog.prefill_source.setCurrentIndex(1)       # folders only: a file gives no name
+        seen.append(dialog.edit.text())
+        dialog.prefill_source.setCurrentIndex(0)
+        seen.append(dialog.edit.text())
+        dialog.prefill.setChecked(False)               # prefill off
+        seen.append(dialog.edit.text())
+        return QDialog.DialogCode.Rejected
+    monkeypatch.setattr(dialog_kit.StandardDialog, 'exec', run)
+    window.mkdir()
+    assert seen == ["Episode 1", "", "Episode 1", ""]
+    # The choice is remembered for the next F7.
+    seen.clear()
+    monkeypatch.setattr(dialog_kit.StandardDialog, 'exec', lambda dialog: seen.append((dialog.edit.text(), dialog.prefill.isChecked())) or QDialog.DialogCode.Rejected)
+    window.mkdir()
+    assert seen == [("", False)]
+
+
+def test_properties_show_program_icon_and_assign_without_opening(app, tmp_path, monkeypatch):
+    from soovee_commander.native_apps import Application
+    import soovee_commander.associations as associations
+    from PySide6.QtCore import QProcess
+    from PySide6.QtWidgets import QPushButton, QLabel
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    movie = tmp_path / "film.mkv"; movie.write_bytes(b"x")
+    player = tmp_path / "Player.app"; player.mkdir()
+    monkeypatch.setattr(associations, "applications_for_file", lambda path: [Application(str(player), "Player")])
+    launched = []
+    monkeypatch.setattr(QProcess, "startDetached", lambda program, args: (launched.append(program) or True, 1))
+    window = Commander(str(tmp_path), str(tmp_path)); window.show(); settle(app, window)
+    window.left.tree.setCurrentIndex(window.left.model.index_for_name("film.mkv")); app.processEvents()
+    properties = window.show_properties(); settle(app, window)
+    change = next(b for b in properties.findChildren(QPushButton) if b.text() == 'Change…')
+    opened = []
+    real = window.show_open_with
+    monkeypatch.setattr(window, 'show_open_with', lambda paths, assign=False: opened.append(real(paths, assign=assign)) or opened[-1])
+    change.click(); settle(app, window)
+    dialog = opened[0]
+    assert dialog.assign and dialog.remember.isChecked() and dialog.apply_button.text() == 'Use' and dialog.apply_button.isDefault()
+    row = next(i for i in range(dialog.apps.count()) if dialog.apps.item(i).data(Qt.ItemDataRole.UserRole) == str(player))
+    dialog.apps.setCurrentRow(row)
+    dialog.apply_button.click(); settle(app, window)
+    assert window.associations.custom['.mkv'] == window.associations.custom['.mp4'] == str(player)
+    assert launched == []
+    assert any(label.text() == 'Player' for label in properties.findChildren(QLabel))
+    window.close(); app.processEvents()

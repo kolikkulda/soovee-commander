@@ -503,5 +503,10 @@
   "This TV’s code": "Kód této TV",
   "This device can open folders shared by paired devices, and they can open folders you share.": "Toto zařízení otevře složky sdílené spárovanými zařízeními a ona otevřou složky, které sdílíte vy.",
   "This device’s code": "Kód tohoto zařízení",
-  "This location is not available now.": "Toto umístění teď není dostupné."
+  "This location is not available now.": "Toto umístění teď není dostupné.",
+  "This file cannot be opened in another app.": "Tento soubor nelze otevřít v jiné aplikaci.",
+  "Pairing requests": "Žádosti o párování",
+  "Nearby devices can ask this one to show its pairing code": "Zařízení v okolí mohou požádat o zobrazení párovacího kódu",
+  "On": "Zapnuto",
+  "Off": "Vypnuto"
 }

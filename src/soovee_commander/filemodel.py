@@ -73,6 +73,7 @@ class FileModel(QAbstractTableModel):
         self.labels = list(self.headers)
         self.alignments = [c[3] for c in COLUMNS]
         self.program_label = lambda entry: ""
+        self.program_icon = lambda entry: None
         self.path_label = lambda entry: entry.name
         self.directory_sizes = {}
         self.thumbnails = OrderedDict()
@@ -126,6 +127,8 @@ class FileModel(QAbstractTableModel):
             if column == 14:
                 return self.path_label(entry)
             return display_cell(entry, column)
+        if role == Qt.ItemDataRole.DecorationRole and column == 5:
+            return self.program_icon(entry)
         if role == Qt.ItemDataRole.DecorationRole and column == 0:
             if entry.name in self.thumbnails:
                 return self.thumbnails[entry.name]

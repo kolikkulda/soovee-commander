@@ -6,13 +6,32 @@ import os
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QObject, QProcess, QTimer, QUrl, Signal, Qt
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout,
-                              QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-                              QVBoxLayout)
+from PySide6.QtCore import QFileInfo, QObject, QProcess, QSize, QTimer, QUrl, Signal, Qt
+from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFileDialog, QFileIconProvider, QGridLayout,
+                              QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+                              QVBoxLayout, QWidget)
 
-from .filetypes import extension
+from .filetypes import EXTENSIONS, GROUPS, extension
+
+_icons = {}
+
+
+def app_icon(path):
+    """The application's own icon (Finder / Explorer), cached; GUI thread only."""
+    if not path:
+        return QIcon()
+    if path not in _icons:
+        _icons[path] = QFileIconProvider().icon(QFileInfo(path)) if Path(path).exists() else QIcon()
+    return _icons[path]
+
+
+def related_extensions(ext):
+    """Other extensions of the same kind (all video, all images…), for one-step associations."""
+    group = EXTENSIONS.get(ext.lstrip("."))
+    if not group or group in ("application", "archive", "file"):
+        return []
+    return ["." + value for value in GROUPS[group][3].split()]
 from .native_apps import Application, application, applications_for_file, default_application
 
 
@@ -49,6 +68,10 @@ class Associations(QObject):
                 self.timer.start()
         return None
 
+    def icon(self, name):
+        app = self.cached(name)
+        return app_icon(app.path) if app and app.path else None
+
     def label(self, name):
         app = self.cached(name)
         ext = extension(name)
@@ -80,13 +103,14 @@ class Associations(QObject):
             loaded({ext: None for ext in pending})
         self.host.run_task(lookup, loaded, failed, read_only=True)
 
-    def set_default(self, ext, path):
-        if path is None:
-            self.custom.pop(ext, None)
-        else:
-            if not os.path.isabs(path) or not Path(path).exists():
-                raise ValueError(tr('Choose an existing application or executable.'))
-            self.custom[ext] = str(Path(path))
+    def set_default(self, ext, path, more=()):
+        if path is not None and (not os.path.isabs(path) or not Path(path).exists()):
+            raise ValueError(tr('Choose an existing application or executable.'))
+        for value in (ext, *more):
+            if path is None:
+                self.custom.pop(value, None)
+            else:
+                self.custom[value] = str(Path(path))
         self.host.settings.setValue("file_associations", json.dumps(self.custom, ensure_ascii=False))
         self.host.settings.sync()
         self.changed.emit()
@@ -131,33 +155,68 @@ application_cached = lru_cache(maxsize=256)(application)
 
 
 class OpenWithDialog(QDialog):
-    def __init__(self, host, paths, panel=None):
+    """Pick an application: open now, or only save it as the default for this type and related types."""
+
+    def __init__(self, host, paths, panel=None, assign=False):
         super().__init__(host)
         self.host, self.paths = host, list(paths)
+        self.assign = assign
         self.ext = extension(Path(paths[0]).name)
-        self.setWindowTitle(tr('Open with'))
-        self.resize(680, 480)
+        self.setWindowTitle(tr('File association') if assign else tr('Open with'))
+        self.resize(700, 560)
         layout = QVBoxLayout(self)
         label = QLabel(tr('{v0} items · {v1}').format(v0=len(paths), v1=Path(paths[0]).name))
         label.setWordWrap(True)
         layout.addWidget(label)
         self.apps = QListWidget()
+        self.apps.setIconSize(QSize(28, 28))
         self.apps.itemDoubleClicked.connect(lambda _: self.accept_choice())
         layout.addWidget(self.apps, 1)
         self.status = QLabel(tr('Finding available applications…'))
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.remember = QCheckBox(tr('Use in Soovee Commander for {v0}').format(v0=self.ext or tr('files without an extension')))
-        self.remember.setEnabled(all(extension(Path(p).name) == self.ext for p in paths))
+        same = all(extension(Path(p).name) == self.ext for p in paths)
+        self.remember = QCheckBox(tr('Always use this application in Soovee Commander for {v0}').format(v0=self.ext or tr('files without an extension')))
+        self.remember.setEnabled(same)
         layout.addWidget(self.remember)
+        # Related types: e.g. all video formats at once; each can be unticked.
+        self.related = {}
+        others = [value for value in related_extensions(self.ext) if value != self.ext] if same else []
+        self.related_box = QWidget()
+        grid = QGridLayout(self.related_box)
+        grid.setContentsMargins(22, 0, 0, 0)
+        if others:
+            group = GROUPS[EXTENSIONS[self.ext.lstrip(".")]][0]
+            grid.addWidget(QLabel(tr('Also for other {v0} files:').format(v0=tr(group).lower())), 0, 0, 1, 6)
+            for index, value in enumerate(others):
+                box = QCheckBox(value)
+                box.setChecked(True)
+                self.related[value] = box
+                grid.addWidget(box, 1 + index // 6, index % 6)
+        self.related_box.setVisible(False)
+        self.remember.toggled.connect(lambda on: self.related_box.setVisible(on and bool(self.related)))
+        layout.addWidget(self.related_box)
         row = QHBoxLayout()
         choose = QPushButton(tr('Choose another application…'))
         choose.clicked.connect(self.choose)
         reset = QPushButton(tr('Restore system association'))
         reset.clicked.connect(self.reset)
-        row.addWidget(choose); row.addWidget(reset)
+        row.addWidget(choose); row.addWidget(reset); row.addStretch(1)
         layout.addLayout(row)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Open | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Open).setText(tr('Open'))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('Cancel'))
+        # "Use" saves the association (this type and the ticked related ones) and does not open anything.
+        self.apply_button = buttons.addButton(tr('Use') if assign else tr('Use without opening'), QDialogButtonBox.ButtonRole.ApplyRole)
+        self.apply_button.setToolTip(tr('Save the association and close; the file is not opened.'))
+        self.apply_button.setEnabled(same)
+        self.apply_button.clicked.connect(lambda: self.accept_choice(open_now=False))
+        if assign and same:
+            self.remember.setChecked(True)
+            opener = buttons.button(QDialogButtonBox.StandardButton.Open)
+            opener.setAutoDefault(False)
+            self.apply_button.setAutoDefault(True)
+            QTimer.singleShot(0, lambda: self.apply_button.setDefault(True))   # after the button box picks its default
         buttons.accepted.connect(self.accept_choice)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -174,12 +233,19 @@ class OpenWithDialog(QDialog):
         item = QListWidgetItem((app.name if app else "") + suffix)
         item.setData(Qt.ItemDataRole.UserRole, app.path if app else "")
         item.setToolTip(app.path if app else tr('Use the current operating system default'))
+        if app:
+            item.setIcon(app_icon(app.path))
+        else:   # the system default: show that application's icon when it is known
+            default = self.host.associations.cache.get(self.ext)
+            if default is not None and default.path:
+                item.setIcon(app_icon(default.path))
+                item.setText(tr('System default application') + ' · ' + default.name)
         self.apps.addItem(item)
 
     def loaded(self, apps):
         for app in apps:
             self.add(app)
-        self.status.setText(tr('The application choice applies to this opening. Check the box to save an extension association only in Soovee Commander.'))
+        self.status.setText(tr('Open uses the application once. Tick “Always use” to save it in Soovee Commander; other applications and system defaults are unchanged.'))
 
     def choose(self):
         path, _ = QFileDialog.getOpenFileName(self, tr('Choose application'), "/Applications" if sys.platform == "darwin" else "", tr('Applications (*.exe *.com);;All files (*)') if os.name == "nt" else tr('All applications (*)'))
@@ -191,7 +257,7 @@ class OpenWithDialog(QDialog):
                     self.apps.setCurrentRow(index)
 
     def reset(self):
-        self.host.associations.set_default(self.ext, None)
+        self.host.associations.set_default(self.ext, None, [value for value, box in self.related.items() if box.isChecked()] if self.remember.isChecked() else ())
         self.status.setText(tr('Custom association removed. The operating system default will be used.'))
         self.remember.setChecked(False)
         for row in range(self.apps.count()):
@@ -199,17 +265,18 @@ class OpenWithDialog(QDialog):
                 self.apps.setCurrentRow(row)
                 break
 
-    def accept_choice(self):
+    def accept_choice(self, open_now=True):
         item = self.apps.currentItem()
         if item is None:
             return
         path = item.data(Qt.ItemDataRole.UserRole)
-        if self.remember.isChecked():
+        if self.remember.isChecked() or not open_now:
             try:
-                self.host.associations.set_default(self.ext, path or None)
+                self.host.associations.set_default(self.ext, path or None, [value for value, box in self.related.items() if box.isChecked()] if self.remember.isChecked() else ())
             except ValueError as exc:
                 return QMessageBox.warning(self, tr('File associations'), str(exc))
-        self.host.associations.open(self.paths, application_cached(path) if path else None, system=not path)
+        if open_now:
+            self.host.associations.open(self.paths, application_cached(path) if path else None, system=not path)
         self.accept()
 
 
@@ -222,6 +289,7 @@ class AssociationsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(tr('Associations in Soovee Commander. Other applications and system defaults are unchanged.')))
         self.items = QListWidget()
+        self.items.setIconSize(QSize(24, 24))
         layout.addWidget(self.items, 1)
         row = QHBoxLayout()
         for title, callback in ((tr('Change application…'), self.change), (tr('Restore system default'), self.remove), (tr('Refresh system applications'), host.associations.invalidate)):
@@ -238,6 +306,7 @@ class AssociationsDialog(QDialog):
             item = QListWidgetItem(f"{ext or tr('(no extension)')}  →  {application_cached(path).name}")
             item.setData(Qt.ItemDataRole.UserRole, ext)
             item.setToolTip(path)
+            item.setIcon(app_icon(path))
             self.items.addItem(item)
 
     def remove(self):
