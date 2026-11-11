@@ -5,6 +5,7 @@
 | macOS (Apple Silicon) | Desktop app, DMG and signed updates. |
 | Windows x64 | Desktop app, installer, portable ZIP and signed updates. Installation and removal are tested in CI. |
 | macOS Intel, Windows ARM64 | No dedicated build yet. |
+| Linux | No package yet and not tested. Running from source may work but is unsupported. |
 | Android phone and tablet | One APK for ARM and x86, 32 and 64 bit, Android 7 or newer. |
 | Android TV, Google TV | Same APK with a remote-control interface. |
 | iPhone and iPad | Native app; development builds only, not distributed yet. |

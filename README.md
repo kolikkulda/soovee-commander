@@ -16,6 +16,7 @@ Download the files from [Releases](https://github.com/kolikkulda/soovee-commande
 - **Windows (x64):** run `SooveeCommander-…-setup.exe`, or unpack the portable ZIP and run `SooveeCommander.exe`.
 - **Android and Android TV:** install `SooveeCommander-…-android-universal.apk` (Android 7 or newer, ARM and x86, 32 and 64 bit). [Details and limits](docs/mobile.md).
 - **iPhone and iPad:** not distributed yet (development builds only).
+- **Linux:** no package yet and not tested. Running from source may work but is unsupported.
 - Python and libraries are bundled; nothing else needs to be installed.
 
 **Updates:** on macOS and Windows, download the `.stereoupdate` file for your system and choose Help › Install update. Packages are signed and checked before installation. Each release lists SHA-256 checksums.

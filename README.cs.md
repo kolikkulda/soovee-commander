@@ -14,6 +14,7 @@ Testovací verze jsou v [GitHub Releases](https://github.com/kolikkulda/soovee-c
 - **Windows x64:** spustit instalátor `SooveeCommander-…-setup.exe`, případně rozbalit přenosný ZIP a spustit `SooveeCommander.exe`.
 - **Android / Android TV:** jeden podepsaný APK pro ARM i x86 (32 i 64 bit), Android 7+. [Instalace a omezení](docs/mobile.md).
 - **iPhone / iPad:** zatím jen vývojové sestavení, ne App Store.
+- **Linux:** zatím bez balíčku a neotestováno. Spuštění ze zdrojů může fungovat, ale není podporované.
 - Python ani další knihovny se k hotovým balíčkům ručně neinstalují.
 
 Podrobnější dokumentace je v angličtině: [instalace a aktualizace](docs/installation.md), [vývoj](docs/development.md).
