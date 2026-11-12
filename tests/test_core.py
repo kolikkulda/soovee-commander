@@ -629,3 +629,91 @@ def test_copy_metadata_falls_back_when_attributes_are_refused(tmp_path, monkeypa
     monkeypatch.setattr(shutil, 'copystat', refuse)
     providers.copy_metadata(str(source), str(target))
     assert int(target.stat().st_mtime) == 1_000_000
+
+
+def test_cross_volume_move_removes_read_only_source(folders, monkeypatch):
+    # Windows refuses to delete read-only items (WinError 5); F6 then left the source behind.
+    import stat
+    source, target = folders
+    (source / "folder").mkdir()
+    (source / "folder" / "a.txt").write_text("contents")
+    (source / "single.txt").write_text("one")
+    for item in (source / "folder" / "a.txt", source / "single.txt"):
+        os.chmod(item, stat.S_IREAD)
+    monkeypatch.setattr("soovee_commander.operations.rename_no_replace", lambda *args: False)
+    provider = LocalProvider()
+    move_local(provider, str(source), provider, str(target), provider.list(str(source)), Event(), lambda *args: None)
+    assert not any(source.iterdir())
+    assert (target / "folder" / "a.txt").read_text() == "contents"
+    assert (target / "single.txt").read_text() == "one"
+    for item in (target / "folder" / "a.txt", target / "single.txt"):
+        os.chmod(item, stat.S_IWRITE | stat.S_IREAD)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows junctions")
+def test_windows_junction_is_listed_as_link_and_not_scanned(tmp_path):
+    import _winapi
+    from soovee_commander.advanced import folder_size
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "big.bin").write_bytes(b"x" * 1000)
+    root = tmp_path / "root"
+    root.mkdir()
+    _winapi.CreateJunction(str(outside), str(root / "junction"))
+    provider = LocalProvider()
+    [entry] = provider.list(str(root))
+    assert entry.is_link and entry.is_dir
+    assert folder_size(provider, str(root), Event()) == (0, 0, 0)
+    provider.remove(str(root / "junction"), entry)
+    assert (outside / "big.bin").exists() and not (root / "junction").exists()
+
+
+def _windows_drive_folder(drive):
+    import tempfile
+    try:
+        return Path(tempfile.mkdtemp(prefix="soovee-move-", dir=drive + "\\"))
+    except OSError:
+        return None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows system folders")
+def test_windows_folder_size_of_real_profile_with_denied_junctions():
+    # C:\Users\Default holds junctions such as "Application Data" whose ACL denies
+    # listing; scanning into them made every folder on C:\ fail with WinError 5.
+    from soovee_commander.advanced import folder_size
+    provider = LocalProvider()
+    root = os.path.join(os.environ.get("SystemDrive", "C:") + "\\", "Users", "Default")
+    links = {e.name for e in provider.list(root) if e.is_link}
+    assert "Application Data" in links or not os.path.lexists(os.path.join(root, "Application Data"))
+    size, files, folders = folder_size(provider, root, Event())
+    assert files > 0 and size > 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows drives")
+def test_windows_move_folder_between_drives():
+    # F6 from C: to D: copies and then deletes the source; read-only items must not stop it.
+    import shutil
+    drives = [d for d in ("C:", "D:") if os.path.exists(d + "\\")]
+    if len(drives) < 2:
+        pytest.skip("needs two drives")
+    source, target = _windows_drive_folder("C:"), _windows_drive_folder("D:")
+    if source is None or target is None:
+        pytest.skip("drive not writable")
+    try:
+        folder = source / "My folder"
+        (folder / "inner").mkdir(parents=True)
+        (folder / "inner" / "file.txt").write_text("data")
+        (folder / "locked.txt").write_text("read only")
+        os.chmod(folder / "locked.txt", stat.S_IREAD)
+        os.chmod(folder / "inner", stat.S_IREAD)   # read-only folder attribute, as on customized folders
+        provider = LocalProvider()
+        move_local(provider, str(source), provider, str(target), provider.list(str(source)), Event(), lambda *args: None)
+        assert not folder.exists()
+        assert (target / "My folder" / "inner" / "file.txt").read_text() == "data"
+    finally:
+        for base in (source, target):
+            for directory, folders, names in os.walk(base):
+                for name in folders + names:
+                    with contextlib.suppress(OSError):
+                        os.chmod(os.path.join(directory, name), stat.S_IWRITE | stat.S_IREAD)
+            shutil.rmtree(base, ignore_errors=True)

@@ -1475,9 +1475,16 @@ class Commander(QMainWindow):
         cancel = Event()
         self.cancel_events.add(cancel)
         self.cancel_button.setEnabled(True)
+        skipped, denied = [], []
         def calculate(report):
+            values = {}
             with provider.batch():
-                return {entry.name: folder_size(provider, provider.join(path, entry.name), cancel, report)[0] for entry in directories}
+                for entry in directories:
+                    try:
+                        values[entry.name] = folder_size(provider, provider.join(path, entry.name), cancel, report, skipped)[0]
+                    except (PermissionError, FileNotFoundError):
+                        denied.append(entry.name)   # the folder itself cannot be opened; keep the others
+            return values
         def cleanup():
             self.cancel_events.discard(cancel)
             self.cancel_button.setEnabled(bool(self.cancel_events))
@@ -1495,7 +1502,10 @@ class Commander(QMainWindow):
                     panel.model.dataChanged.emit(panel.model.index(0, 1), panel.model.index(panel.model.rowCount() - 1, 1))
                 if panel.model.column == 1:
                     panel.model.sort(1, Qt.SortOrder.DescendingOrder if panel.model.descending else Qt.SortOrder.AscendingOrder)
-            self.statusBar().showMessage(tr('Calculated sizes: {v0} folders').format(v0=len(values)))
+            message = tr('Calculated sizes: {v0} folders').format(v0=len(values))
+            if skipped or denied:
+                message += ' · ' + tr('{v0} folders without access were skipped').format(v0=len(skipped) + len(denied))
+            self.statusBar().showMessage(message)
         def failed(message):
             cleanup()
             self.error(message)

@@ -2,6 +2,12 @@
 
 All notable changes to Soovee Commander are listed here. Versions before 1.0 are test builds.
 
+## [0.22.1] - 2026-11-12
+
+### Fixed
+- Windows: folder sizes on the system drive no longer fail with "Access is denied" (WinError 5). System junctions such as "Application Data" are treated as links, and folders without access are skipped and counted in the status bar.
+- Windows: moving items between drives (F6) no longer leaves the source behind when it contains read-only files or folders.
+
 ## [0.22.0] - 2026-11-11
 
 ### Security

@@ -204,3 +204,26 @@ def test_search_date_size_and_type_filters(tmp_path):
     assert [e.name for _, _, e in result] == ['new.txt'] and not errors
     result, _ = search(LocalProvider(), str(tmp_path), '*', '', Event(), kind='folders')
     assert [e.name for _, _, e in result] == ['folder']
+
+
+def test_folder_size_skips_subfolders_without_access(pair, monkeypatch):
+    # C:\ contains folders like "System Volume Information" that deny listing (WinError 5).
+    p, a, _ = pair
+    root = Path(a)
+    (root / "open").mkdir()
+    (root / "open" / "file.bin").write_bytes(b"x" * 10)
+    (root / "locked").mkdir()
+    (root / "locked" / "hidden.bin").write_bytes(b"y" * 99)
+    original = p.list
+
+    def guarded(path, **kwargs):
+        if Path(path).name == "locked":
+            raise PermissionError(13, "Access is denied", path)
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(p, "list", guarded)
+    skipped = []
+    assert folder_size(p, a, Event(), skipped=skipped) == (10, 1, 2)
+    assert skipped == [str(root / "locked")]
+    with pytest.raises(PermissionError):   # the selected folder itself still reports the error
+        folder_size(p, str(root / "locked"), Event())

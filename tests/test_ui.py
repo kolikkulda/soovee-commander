@@ -2744,3 +2744,28 @@ def test_properties_show_program_icon_and_assign_without_opening(app, tmp_path, 
     assert launched == []
     assert any(label.text() == 'Player' for label in properties.findChildren(QLabel))
     window.close(); app.processEvents()
+
+
+def test_folder_sizes_skip_folders_without_access(app, tmp_path, monkeypatch):
+    # Selecting all folders on C:\ includes protected ones; the rest must still get sizes.
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    root = tmp_path / "root"; root.mkdir()
+    for name in ("open", "locked", "mixed", "mixed/denied"):
+        (root / name).mkdir()
+    (root / "open" / "data").write_bytes(b"x" * 300)
+    (root / "mixed" / "data").write_bytes(b"x" * 20)
+    window = Commander(str(root), str(root)); window.show(); settle(app, window)
+    panel = window.left
+    original = panel.provider.list
+
+    def guarded(path, **kwargs):
+        if Path(path).name in ("locked", "denied"):
+            raise PermissionError(13, "Access is denied", path)
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(panel.provider, "list", guarded)
+    window.calculate_sizes([e for e in panel.entries if e.is_dir], panel); settle(app, window)
+    assert panel.model.directory_sizes == {"open": 300, "mixed": 20}
+    assert "2" in window.statusBar().currentMessage()
+    window.close(); app.processEvents()

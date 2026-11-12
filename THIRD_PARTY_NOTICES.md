@@ -14,7 +14,7 @@ Keep LICENSE, this notice, upstream notices, build scripts and test-fixture lice
 
 ## LGPL components in the binary releases
 
-The macOS, Windows and Android packages of releases 0.20.0 to 0.22.0 contain these components under the GNU Lesser General Public License. Versions were read from the component inventory inside the built packages (About › Components and licenses shows the same list).
+The macOS, Windows and Android packages of releases 0.20.0 to 0.22.1 contain these components under the GNU Lesser General Public License. Versions were read from the component inventory inside the built packages (About › Components and licenses shows the same list).
 
 | Component | Version | License | Corresponding source |
 | --- | --- | --- | --- |

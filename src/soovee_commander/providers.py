@@ -128,6 +128,18 @@ def copy_metadata(source, destination):
         os.utime(destination, ns=(info.st_atime_ns, info.st_mtime_ns))
 
 
+def _clear_readonly_and_retry(function, path, exc):
+    """Windows refuses to delete items with the read-only attribute (WinError 5),
+    which copies from CDs, cameras and older systems often carry."""
+    if os.name != 'nt' or not isinstance(exc, PermissionError):
+        raise exc
+    try:
+        os.chmod(path, stat.S_IWRITE, follow_symlinks=False)
+    except (OSError, NotImplementedError):
+        raise exc from None
+    function(path)
+
+
 @lru_cache(maxsize=256)
 def owner_name(uid, group=False):
     if os.name == "nt":
@@ -197,10 +209,17 @@ class LocalProvider(Provider):
                     created = getattr(info, "st_birthtime", info.st_ctime if os.name == "nt" else 0)
                     # Elsewhere the creation time is when a copy arrived, the closest Date Added.
                     added, opened = native_finder_dates(item.path) if darwin_dates else (created, info.st_atime)
+                    # Windows junctions ("Documents and Settings", "Application Data") behave
+                    # like links: scans and copies must not descend into their targets.
+                    link = item.is_symlink() or (os.name == 'nt' and getattr(item, 'is_junction', lambda: False)())
+                    target = ""
+                    if link:
+                        with contextlib.suppress(OSError):
+                            target = os.readlink(item.path)
                     result.append(Entry(item.name, item.is_dir(), info.st_size,
-                                        info.st_mtime, item.is_symlink(), info.st_mode,
+                                        info.st_mtime, link, info.st_mode,
                                         created, info.st_atime, owner_name(info.st_uid), owner_name(info.st_gid, True),
-                                        os.readlink(item.path) if item.is_symlink() else "", added, opened))
+                                        target, added, opened))
                 except FileNotFoundError:
                     continue
         return result
@@ -286,9 +305,13 @@ class LocalProvider(Provider):
 
     def remove(self, path: str, entry: Entry) -> None:
         if entry.is_dir and not entry.is_link:
-            shutil.rmtree(path)
+            # onexc exists from Python 3.12; Android bundles 3.11 and needs no retry.
+            shutil.rmtree(path, **({'onexc': _clear_readonly_and_retry} if os.name == 'nt' else {}))
         else:
-            os.unlink(path)
+            try:
+                os.unlink(path)
+            except PermissionError as exc:
+                _clear_readonly_and_retry(os.unlink, path, exc)
 
 
 ARCHIVE_SUFFIXES = (".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz", ".7z", ".rar")

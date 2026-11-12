@@ -17,13 +17,20 @@ def check(cancel):
         raise Cancelled('The operation was canceled.')
 
 
-def walk(provider, root, cancel, report=lambda *args: None, *, fresh_metadata=False):
+def walk(provider, root, cancel, report=lambda *args: None, *, fresh_metadata=False, skipped=None):
+    """skipped: a list that collects subfolders which cannot be read instead of failing."""
     pending = [(root, "")]
     while pending:
         base, relative = pending.pop()
         check(cancel)
         report(f'Scanning · {base}', 0)
-        entries = provider.list(base, fresh=fresh_metadata) if isinstance(provider, LocalProvider) else provider.list(base)
+        try:
+            entries = provider.list(base, fresh=fresh_metadata) if isinstance(provider, LocalProvider) else provider.list(base)
+        except (PermissionError, FileNotFoundError):
+            if skipped is None or base == root:
+                raise
+            skipped.append(base)   # e.g. protected system folders on C:\ (WinError 5)
+            continue
         for entry in entries:
             check(cancel)
             path = provider.join(base, entry.name)
@@ -33,10 +40,12 @@ def walk(provider, root, cancel, report=lambda *args: None, *, fresh_metadata=Fa
                 pending.append((path, name + "/"))
 
 
-def folder_size(provider, root, cancel, report=lambda *args: None):
+def folder_size(provider, root, cancel, report=lambda *args: None, skipped=None):
+    """Total of the readable part; subfolders without access are listed in skipped."""
     size = files = folders = 0
+    skipped = [] if skipped is None else skipped
     with provider.batch():
-        for _, _, entry in walk(provider, root, cancel, report):
+        for _, _, entry in walk(provider, root, cancel, report, skipped=skipped):
             if entry.is_link:
                 continue
             if entry.is_dir:

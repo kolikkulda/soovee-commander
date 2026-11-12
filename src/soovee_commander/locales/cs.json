@@ -119,6 +119,7 @@
   "Calculate sizes of selected folders": "Spočítat velikosti vybraných složek",
   "Calculated sizes: ": "Velikosti spočítány: ",
   "Calculated sizes: {v0} folders": "Velikosti spočítány: {v0} složek",
+  "{v0} folders without access were skipped": "přeskočeno složek bez přístupu: {v0}",
   "Calculating total size…": "Počítám celkovou velikost…",
   "Cancel": "Zrušit",
   "Cancel transfer": "Zrušit přenos",
