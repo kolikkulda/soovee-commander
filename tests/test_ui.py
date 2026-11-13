@@ -2769,3 +2769,82 @@ def test_folder_sizes_skip_folders_without_access(app, tmp_path, monkeypatch):
     assert panel.model.directory_sizes == {"open": 300, "mixed": 20}
     assert "2" in window.statusBar().currentMessage()
     window.close(); app.processEvents()
+
+
+def test_paste_copy_into_same_folder_creates_numbered_duplicates(app, tmp_path, monkeypatch):
+    # Ctrl+C, Ctrl+V in one folder: Finder/Explorer make a numbered copy instead of failing.
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    folder = tmp_path / "folder"; folder.mkdir()
+    (folder / "report.txt").write_text("text")
+    (folder / "Photos").mkdir(); (folder / "Photos" / "a.jpg").write_bytes(b"jpg")
+    monkeypatch.setattr('soovee_commander.dialog_kit.confirm', lambda *a, **k: True)
+    window = Commander(str(folder), str(folder)); window.show(); settle(app, window)
+    panel = window.left
+    window.activate(panel)
+
+    def copy_and_paste(name, cut=False):
+        panel.tree.setCurrentIndex(panel.model.index_for_name(name))
+        panel.tree.clearSelection(); app.processEvents()
+        window.clipboard_copy(cut); window.clipboard_paste(); settle(app, window)
+
+    copy_and_paste("report.txt")
+    copy_and_paste("report.txt")
+    assert (folder / "report (2).txt").read_text() == "text" and (folder / "report (3).txt").exists()
+    copy_and_paste("report (2).txt")          # continues the numbering
+    assert (folder / "report (4).txt").exists()
+    copy_and_paste("Photos")
+    assert (folder / "Photos (2)" / "a.jpg").read_bytes() == b"jpg"
+    before = sorted(p.name for p in folder.iterdir())
+    copy_and_paste("report.txt", cut=True)    # cutting and pasting in place changes nothing
+    assert sorted(p.name for p in folder.iterdir()) == before
+    assert "already" in window.statusBar().currentMessage()
+    app.clipboard().clear()
+    window.close(); app.processEvents()
+
+
+def test_copy_with_both_panels_in_one_folder_defaults_to_numbered_copy(app, tmp_path, monkeypatch):
+    from soovee_commander import dialog_kit
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    folder = tmp_path / "folder"; folder.mkdir()
+    (folder / "a.txt").write_text("a")
+    window = Commander(str(folder), str(folder)); window.show(); settle(app, window)
+    window.activate(window.left)
+    window.left.tree.setCurrentIndex(window.left.model.index_for_name("a.txt"))
+    monkeypatch.setattr(dialog_kit.StandardDialog, "exec", lambda self: dialog_kit.QDialog.DialogCode.Accepted)
+    window.copy(); settle(app, window)
+    assert (folder / "a (2).txt").read_text() == "a"
+    window.close(); app.processEvents()
+
+
+def test_properties_show_checksums_and_folder_contents(app, tmp_path):
+    import hashlib
+    from PySide6.QtWidgets import QLabel, QTabWidget
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings"))
+    root = tmp_path / "root"; root.mkdir()
+    data = b"Soovee checksum test\n" * 1000
+    (root / "file.bin").write_bytes(data)
+    (root / "box").mkdir(); (root / "box" / "inner").mkdir()
+    (root / "box" / "one").write_bytes(b"1"); (root / "box" / "inner" / "two").write_bytes(b"22")
+    window = Commander(str(root), str(root)); window.show(); settle(app, window)
+    panel = window.left
+    panel.tree.setCurrentIndex(panel.model.index_for_name("file.bin"))
+    dialog = window.show_properties(); settle(app, window)
+    tabs = dialog.findChild(QTabWidget)
+    page = tabs.widget(tabs.count() - 1)
+    assert tabs.tabText(tabs.count() - 1) == "Checksums"
+    assert wait_until(app, lambda: page.edits["sha256"].text() == hashlib.sha256(data).hexdigest())
+    assert page.edits["md5"].text() == hashlib.md5(data).hexdigest()
+    assert page.edits["sha1"].text() == hashlib.sha1(data).hexdigest()
+    page.compare.setText(hashlib.sha256(data).hexdigest().upper())
+    assert "SHA-256" in page.verdict.text() and "✓" in page.verdict.text()
+    page.compare.setText("00" * 32)
+    assert "✗" in page.verdict.text()
+    dialog.close(); settle(app, window)
+    panel.tree.setCurrentIndex(panel.model.index_for_name("box"))
+    dialog = window.show_properties(); settle(app, window)
+    total = dialog.findChild(QLabel, "propertiesTotal")
+    assert wait_until(app, lambda: "Contains 2 files and 2 folders" in total.text())
+    dialog.close(); window.close(); app.processEvents()

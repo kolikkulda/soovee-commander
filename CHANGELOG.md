@@ -2,6 +2,13 @@
 
 All notable changes to Soovee Commander are listed here. Versions before 1.0 are test builds.
 
+## [0.23.0] - 2026-11-13
+
+### Desktop
+- Pasting copied items into the folder they came from creates numbered copies such as "Report (2).txt"; copying "Report (2)" again continues with "Report (3)". Copy (F5) with both panels in one folder does the same.
+- Properties show MD5, SHA-1 and SHA-256 checksums with a field to compare a published value, the MIME type, image dimensions and how many files and folders a selection contains.
+- The README shows the application logo.
+
 ## [0.22.1] - 2026-11-12
 
 ### Fixed

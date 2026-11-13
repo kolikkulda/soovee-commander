@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" alt="Soovee Commander logo" width="128" height="128"></p>
+
 # Soovee Commander
 
 English · [Čeština](README.cs.md)

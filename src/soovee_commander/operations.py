@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import shutil
 from contextlib import ExitStack
 from pathlib import Path
@@ -38,7 +39,8 @@ def copy_entries(source: Provider, source_path: str, destination: Provider,
         for entry in entries:
             original = Path(source.join(source_path, entry.name)).resolve()
             final = target / entry.name
-            if final == original or (entry.is_dir and original in final.parents):
+            # Into its own folder is fine when the copy gets a new name ("name (2)").
+            if (final == original and conflict != "rename") or (entry.is_dir and original in final.parents):
                 raise ValueError('Cannot copy a folder into itself or a subfolder.')
     if isinstance(destination, LocalProvider) and hasattr(os, 'statvfs'):
         info = os.statvfs(destination_path)
@@ -89,10 +91,14 @@ def copy_entries(source: Provider, source_path: str, destination: Provider,
                 return
             if conflict == "rename":
                 parent = destination.parent(dst_path)
-                name = Path(entry.name)
-                number = 2
+                stem, suffix = (entry.name, "") if entry.is_dir else (Path(entry.name).stem, Path(entry.name).suffix)
+                if not stem:   # ".bashrc" has no suffix of its own
+                    stem, suffix = entry.name, ""
+                numbered = re.fullmatch(r"(.*) \((\d+)\)", stem)
+                # Copying "Report (2)" again continues with "Report (3)", not "Report (2) (2)".
+                stem, number = (numbered.group(1), int(numbered.group(2)) + 1) if numbered else (stem, 2)
                 while exists:
-                    alternate = f"{name.stem} ({number}){name.suffix}" if not entry.is_dir else f"{entry.name} ({number})"
+                    alternate = f"{stem} ({number}){suffix}"
                     dst_path = destination.join(parent, alternate)
                     exists = target_exists(dst_path)
                     number += 1

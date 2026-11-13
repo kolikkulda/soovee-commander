@@ -1,6 +1,7 @@
 from __future__ import annotations
 from .i18n import LANGUAGES, install_qt_translations, set_language, tr, ui_retranslator, retranslate_widgets
 
+import contextlib
 from datetime import datetime
 import os
 import json
@@ -14,7 +15,7 @@ from .diagnostic_ui import DiagnosticDialog
 
 from PySide6.QtCore import (QFile, QItemSelectionModel, QObject, QRunnable, QSettings, QSignalBlocker, QSize, QUrl,
                            Qt, QThreadPool, QTimer, Signal)
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QDesktopServices, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QActionGroup, QColor, QFontDatabase, QIcon, QDesktopServices, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFormLayout, QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
@@ -1367,7 +1368,17 @@ class Commander(QMainWindow):
                                  (tr('Accessed'), display_cell(entry, 10)), (tr('Permissions'), display_cell(entry, 8)),
                                  (tr('Owner'), entry.owner), (tr('Group'), entry.group), (tr('Link target'), entry.link_target)]:
                 field(detail_form, label, value)
+            if not entry.is_dir and not entry.is_link:
+                import mimetypes
+                field(detail_form, tr('MIME type'), mimetypes.guess_type(entry.name)[0] or '')
+                if isinstance(panel.provider, LocalProvider):
+                    from PySide6.QtGui import QImageReader
+                    reader = QImageReader(panel.provider.join(panel.path, entry.name))
+                    if reader.canRead() and reader.size().isValid():
+                        field(detail_form, tr('Image size'), f'{reader.size().width()} × {reader.size().height()} px')
             tabs.addTab(details, tr('Details'))
+            if not entry.is_dir and not entry.is_link:
+                tabs.addTab(self._checksum_tab(dialog, panel.provider, panel.provider.join(panel.path, entry.name), entry, rows), tr('Checksums'))
         else:
             details.deleteLater()
             listing = QPlainTextEdit("\n".join(e.name for e in entries))
@@ -1377,9 +1388,13 @@ class Commander(QMainWindow):
         copy_details = QPushButton(tr('Copy properties'))
         copy_details.clicked.connect(lambda: QApplication.clipboard().setText(
             summary.text() + "\n" + "\n".join(label + ': ' + value for label, value in rows)))
-        def show_total(values):
+        def show_total(values, counts=None):
             total = sum(values.values()) + sum(e.size for e in entries if not e.is_dir)
-            summary.setText(tr('Total size: {v0} ({v1} bytes) · {v2} selected').format(v0=size_text(total), v1=f"{total:,}", v2=len(entries)))
+            text = tr('Total size: {v0} ({v1} bytes) · {v2} selected').format(v0=size_text(total), v1=f"{total:,}", v2=len(entries))
+            if counts:
+                files = counts[0] + sum(1 for e in entries if not e.is_dir)
+                text += '\n' + tr('Contains {v0} files and {v1} folders').format(v0=f"{files:,}", v1=f"{counts[1]:,}")
+            summary.setText(text)
         directories = [e for e in entries if e.is_dir and not e.is_link]
         if directories:
             summary.setText(tr('Calculating total size…'))
@@ -1388,22 +1403,23 @@ class Commander(QMainWindow):
             cancel = Event()
             dialog.finished.connect(lambda _: cancel.set())
             from shiboken6 import isValid
-            def completed(values):
+            def completed(results):
+                values = {name: result[0] for name, result in results.items()}
+                counts = (sum(r[1] for r in results.values()), sum(r[2] for r in results.values()) + len(results))
                 tab.sizes.setdefault(key, {}).update(values)
                 if panel._current is tab and panel.location_key(panel.provider, panel.path) == key:
                     panel.model.directory_sizes = tab.sizes[key]
                     panel.update_footer()
                     panel.model.layoutChanged.emit()
                 if isValid(summary):
-                    show_total(values)
+                    show_total(values, counts)
             def failed(message):
                 if isValid(summary):
                     summary.setText(tr('Incomplete: {v0}').format(v0=message))
             cached = tab.sizes.get(key, {})
             if all(e.name in cached for e in directories):
-                show_total({e.name: cached[e.name] for e in directories})
-            else:
-                self.run_task(lambda report: {e.name: folder_size(provider, provider.join(path, e.name), cancel, report)[0] for e in directories}, completed, failed, read_only=True)
+                show_total({e.name: cached[e.name] for e in directories})   # instant; counts follow from the scan
+            self.run_task(lambda report: {e.name: folder_size(provider, provider.join(path, e.name), cancel, report) for e in directories}, completed, failed, read_only=True)
         else:
             show_total({})
         if len(entries) == 1 and isinstance(self.active.provider, LocalProvider) and not entry.is_dir:
@@ -1416,6 +1432,95 @@ class Commander(QMainWindow):
         dialog.finished.connect(lambda _: self.preview_windows.remove(dialog) if dialog in self.preview_windows else None)
         dialog.show()
         return dialog
+
+    CHECKSUM_AUTO_LIMIT = 256 * 1024 * 1024   # larger files are hashed only on request
+
+    def _checksum_tab(self, dialog, provider, path, entry, rows):
+        """MD5, SHA-1 and SHA-256 read in one streaming pass, plus a field to compare a published value."""
+        import hashlib
+        from shiboken6 import isValid
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setSpacing(12)
+        names = (('SHA-256', 'sha256'), ('SHA-1', 'sha1'), ('MD5', 'md5'))
+        edits = {}
+        for label, algorithm in names:
+            edit = QLineEdit(); edit.setReadOnly(True)
+            edit.setProperty('userContent', True)
+            edit.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+            form.addRow(label + ':', edit)
+            edits[algorithm] = edit
+        compare = QLineEdit()
+        compare.setPlaceholderText(tr('Paste an expected checksum to compare'))
+        verdict = QLabel()
+        verdict.setWordWrap(True)
+        form.addRow(tr('Compare') + ':', compare)
+        form.addRow('', verdict)
+        start = QPushButton(tr('Calculate'))
+        status = QLabel()
+        line = QHBoxLayout(); line.addWidget(start); line.addWidget(status, 1)
+        form.addRow('', line)
+        note = QLabel(tr('Use the checksum to confirm that a download or a copy is identical to the original.'))
+        note.setWordWrap(True); note.setObjectName('dialogSubtitle')
+        form.addRow(note)
+        cancel = Event()
+        dialog.finished.connect(lambda _: cancel.set())
+
+        def judge():
+            if not isValid(verdict):
+                return
+            wanted = ''.join(compare.text().split()).lower()
+            known = {algorithm: edit.text() for algorithm, edit in edits.items() if edit.text()}
+            if not wanted or not known:
+                verdict.clear()
+                return
+            match = next((label for label, algorithm in names if known.get(algorithm) == wanted), None)
+            verdict.setText(tr('✓ Matches {v0}').format(v0=match) if match else tr('✗ Does not match'))
+            verdict.setStyleSheet('color: #2e9d57;' if match else 'color: #d64545;')
+        compare.textChanged.connect(judge)
+
+        def calculate(report):
+            hashes = {algorithm: hashlib.new(algorithm) for _, algorithm in names}
+            done = 0
+            class Sink:
+                def write(self, data):
+                    nonlocal done
+                    check_cancel(cancel)
+                    for value in hashes.values():
+                        value.update(data)
+                    done += len(data)
+                    return len(data)
+            provider.read_to(path, Sink(), lambda count: check_cancel(cancel))
+            return {algorithm: value.hexdigest() for algorithm, value in hashes.items()}
+
+        def finished(values):
+            if not isValid(status):
+                return
+            for label, algorithm in names:
+                edits[algorithm].setText(values[algorithm])
+                edits[algorithm].setCursorPosition(0)
+                rows.append((label, values[algorithm]))
+            status.setText(tr('Calculated'))
+            start.setEnabled(True)
+            judge()
+
+        def failed(message):
+            if isValid(status):
+                status.setText(tr('Incomplete: {v0}').format(v0=message))
+                start.setEnabled(True)
+
+        def run():
+            start.setEnabled(False)
+            status.setText(tr('Calculating…'))
+            self.run_task(calculate, finished, failed, read_only=True)
+        start.clicked.connect(run)
+        if entry.size <= self.CHECKSUM_AUTO_LIMIT:
+            QTimer.singleShot(0, run)
+        else:
+            status.setText(tr('Large file: press Calculate to read all {v0}.').format(v0=size_text(entry.size)))
+        page.calculate = run   # for tests
+        page.edits, page.compare, page.verdict = edits, compare, verdict
+        return page
 
     def open_tool(self, cls):
         dialog = cls(self)
@@ -1526,16 +1631,34 @@ class Commander(QMainWindow):
             provider, path = self.active.provider, self.active.path
             if provider.readonly:
                 return self.error(tr('The destination is read only.'))
+            def same_folder(sp, src):
+                # Pasting a copy where it came from makes "name (2)", like Finder and Explorer.
+                if isinstance(sp, LocalProvider) and isinstance(provider, LocalProvider):
+                    try:
+                        return os.path.samefile(src, path)
+                    except OSError:
+                        return False
+                return sp is provider and src.rstrip('/') == path.rstrip('/')
+            if all(cut and same_folder(sp, src) for sp, src, _, cut in groups):
+                return self.statusBar().showMessage(tr('The cut items are already in this folder.'))
+            groups = [g for g in groups if not (g[3] and same_folder(g[0], g[1]))]
+            duplicates = any(not cut and same_folder(sp, src) for sp, src, _, cut in groups)
             count = sum(len(entries) for _, _, entries, _ in groups)
             names = [entry.name for _, _, entries, _ in groups for entry in entries]
+            note = (tr('The copies get a number, for example “name (2)”.') if duplicates else
+                    tr('An existing item with the same name stops the operation. Cut items are moved.'))
             if not dialog_kit.confirm(self, tr('Paste files'), tr('Paste {v0} items here?').format(v0=count),
                                       tr('Into: {v0}').format(v0=self.active.location()), items=names, action=tr('Paste'),
-                                      icon="clipboard_paste", note=tr('An existing item with the same name stops the operation. Cut items are moved.')):
+                                      icon="clipboard_paste", note=note):
                 return
             token = self.file_clipboard.token
             def paste(cancel, report):
                 for sp, src, entries, cut in groups:
-                    (move_entries if cut else copy_entries)(sp, src, provider, path, entries, cancel, report)
+                    if cut:
+                        move_entries(sp, src, provider, path, entries, cancel, report)
+                    else:
+                        copy_entries(sp, src, provider, path, entries, cancel, report,
+                                     conflict='rename' if same_folder(sp, src) else 'error')
             self.enqueue(tr('Paste {v0} items → {v1}').format(v0=count, v1=path), paste, on_done=lambda _: self.file_clipboard.clear_cut(token) if any(g[3] for g in groups) else None)
         except Exception as exc:
             self.error(str(exc))
@@ -1572,6 +1695,12 @@ class Commander(QMainWindow):
             conflicts.addItem(tr('Rename the copy automatically'), "rename")
             if getattr(dp, 'supports_overwrite', True):
                 conflicts.addItem(tr('Replace files, merge folders'), "overwrite")
+            same = sp is dp and src == dst
+            if isinstance(sp, LocalProvider) and isinstance(dp, LocalProvider):
+                with contextlib.suppress(OSError):
+                    same = os.path.samefile(src, dst)
+            if same:   # both panels show one folder: a copy can only be a numbered duplicate
+                conflicts.setCurrentIndex(conflicts.findData("rename"))
         layout.addWidget(QLabel(tr('If an item already exists at the destination:')))
         layout.addWidget(conflicts)
         resume_box = QCheckBox(tr('Keep partial transfers and resume after interruption'))

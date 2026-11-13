@@ -1560,5 +1560,18 @@
   "Folders and files": "Ze složek i souborů",
   "File association": "Přidružení souboru",
   "Use": "Použít",
-  "Change…": "Změnit…"
+  "Change…": "Změnit…",
+  "The cut items are already in this folder.": "Vyjmuté položky už v této složce jsou.",
+  "The copies get a number, for example “name (2)”.": "Kopie dostanou číslo, například „název (2)“.",
+  "Image size": "Rozměry obrázku",
+  "Checksums": "Kontrolní součty",
+  "Contains {v0} files and {v1} folders": "Obsahuje {v0} souborů a {v1} složek",
+  "Paste an expected checksum to compare": "Vložte očekávaný kontrolní součet k porovnání",
+  "✓ Matches {v0}": "✓ Shoduje se s {v0}",
+  "✗ Does not match": "✗ Neshoduje se",
+  "Calculate": "Spočítat",
+  "Use the checksum to confirm that a download or a copy is identical to the original.": "Kontrolním součtem ověříte, že stažený nebo zkopírovaný soubor je shodný s originálem.",
+  "Calculated": "Spočítáno",
+  "Calculating…": "Počítám…",
+  "Large file: press Calculate to read all {v0}.": "Velký soubor: stiskněte Spočítat a přečte se celých {v0}."
 }
